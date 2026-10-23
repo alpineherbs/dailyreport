@@ -143,7 +143,6 @@ def generate_report_no(d):
     suffix = uuid.uuid4().hex[:4].upper()
     return f"ALP-{d.strftime('%Y%m%d')}-{suffix}"
 
-# Blank templates (Fresh empty tables)
 def blank_sales():
     return pd.DataFrame([{
         "Client / Party Name": "",
@@ -175,16 +174,6 @@ def blank_staff():
         "Remarks": ""
     }])
 
-def blank_ledger():
-    return pd.DataFrame([{
-        "Client / Party Name": "",
-        "Reference": "",
-        "Previous Due (Rs.)": 0.0,
-        "New Credit (Rs.)": 0.0,
-        "Payment Received (Rs.)": 0.0,
-        "Returns / Adjustments (Rs.)": 0.0
-    }])
-
 def numeric_columns(df, columns):
     if not isinstance(df, pd.DataFrame):
         df = pd.DataFrame(df)
@@ -195,13 +184,12 @@ def numeric_columns(df, columns):
     return df
 
 # =========================================================
-# PERSISTENT SESSION STATE (Prevents input resets)
+# PERSISTENT SESSION STATE
 # =========================================================
 
 if "form_id" not in st.session_state:
     st.session_state["form_id"] = 1
 
-# Base tables are initialized once and NOT overwritten on every keystroke
 if "sales_base" not in st.session_state:
     st.session_state["sales_base"] = blank_sales()
 
@@ -211,8 +199,8 @@ if "office_base" not in st.session_state:
 if "staff_base" not in st.session_state:
     st.session_state["staff_base"] = blank_staff()
 
-if "ledger_base" not in st.session_state:
-    st.session_state["ledger_base"] = blank_ledger()
+if "previous_dues" not in st.session_state:
+    st.session_state["previous_dues"] = {}
 
 if "report_date" not in st.session_state:
     st.session_state["report_date"] = date.today()
@@ -221,13 +209,12 @@ if "report_no" not in st.session_state:
     st.session_state["report_no"] = generate_report_no(date.today())
 
 def reset_form_to_blank():
-    """Advances form ID so Streamlit loads a fresh empty table without cached entries."""
     st.session_state["form_id"] += 1
     st.session_state["report_no"] = generate_report_no(st.session_state.get("report_date", date.today()))
     st.session_state["sales_base"] = blank_sales()
     st.session_state["office_base"] = blank_office()
     st.session_state["staff_base"] = blank_staff()
-    st.session_state["ledger_base"] = blank_ledger()
+    st.session_state["previous_dues"] = {}
 
 # =========================================================
 # SIDEBAR: CREDENTIALS & CONTROLS
@@ -247,7 +234,7 @@ with st.sidebar:
         "Your 16-Digit App Password:",
         type="password",
         placeholder="Enter App Password",
-        help="Google App Password generated from your Google Account -> Security -> App passwords."
+        help="Google App Password generated from Google Account -> Security -> App passwords."
     )
 
     company_recipient = st.text_input(
@@ -287,11 +274,11 @@ with c4:
 st.divider()
 
 # =========================================================
-# 1. SALES ENTRIES (Continuous Tab / Enter Flow)
+# 1. SALES ENTRIES (AUTO CALCULATES CREDIT = TOTAL - CASH)
 # =========================================================
 
 st.subheader("1. Sales & Cash Collections Grid")
-st.caption("Type values and use Tab or Enter. Edits will stay continuously without resetting.")
+st.caption("Enter product sales. Credit Given automatically calculates as (Qty × Rate) - Cash Collected.")
 
 sales_column_config = {
     "Client / Party Name": st.column_config.TextColumn("Client / Party Name"),
@@ -300,14 +287,13 @@ sales_column_config = {
     "FOC Qty": st.column_config.NumberColumn("FOC (Bonus)", min_value=0.0, step=1.0),
     "Sale Rate (Rs.)": st.column_config.NumberColumn("Sale Rate (Rs.)", min_value=0.0, format="%.2f"),
     "Cash Collected (Rs.)": st.column_config.NumberColumn("Cash Collected (Rs.)", min_value=0.0, format="%.2f"),
-    "Credit Given (Rs.)": st.column_config.NumberColumn("Credit Given (Rs.)", min_value=0.0, format="%.2f"),
+    "Credit Given (Rs.)": st.column_config.NumberColumn("Credit Given (Auto / Manual)", min_value=0.0, format="%.2f"),
     "Client Address": st.column_config.TextColumn("Client Address"),
     "Invoice No.": st.column_config.TextColumn("Invoice / Bill No.")
 }
 
 current_form_id = st.session_state["form_id"]
 
-# Notice: Data source is passed from sales_base without re-writing sales_base on every rerun
 raw_sales = st.data_editor(
     st.session_state["sales_base"],
     num_rows="dynamic",
@@ -319,10 +305,14 @@ raw_sales = st.data_editor(
 
 sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
 
-# Robust Sales Math
-computed_sale = sales["Qty"] * sales["Sale Rate (Rs.)"]
-direct_components = sales["Cash Collected (Rs.)"] + sales["Credit Given (Rs.)"]
-sales["Total Sale (Rs.)"] = computed_sale.where(computed_sale > 0, direct_components)
+# AUTOMATIC CREDIT CALCULATION:
+# If Qty * Rate > 0, Credit is automatically (Total Bill - Cash Collected)
+computed_bill = sales["Qty"] * sales["Sale Rate (Rs.)"]
+auto_calculated_credit = (computed_bill - sales["Cash Collected (Rs.)"]).clip(lower=0.0)
+
+# Apply automatic credit where a sale was made, otherwise retain direct credit/recoveries
+sales["Credit Given (Rs.)"] = auto_calculated_credit.where(computed_bill > 0, sales["Credit Given (Rs.)"])
+sales["Total Sale (Rs.)"] = computed_bill.where(computed_bill > 0, sales["Cash Collected (Rs.)"] + sales["Credit Given (Rs.)"])
 
 total_sales = float(sales["Total Sale (Rs.)"].sum())
 total_cash = float(sales["Cash Collected (Rs.)"].sum())
@@ -341,7 +331,7 @@ m5.metric("Free Goods (FOC)", f"{total_foc:g} units")
 st.divider()
 
 # =========================================================
-# 2. OFFICE EXPENSES & 3. STAFF PAYMENTS
+# 2. OFFICE EXPENSES & 3. STAFF ADVANCES
 # =========================================================
 
 col_exp_1, col_exp_2 = st.columns(2)
@@ -369,11 +359,12 @@ with col_exp_1:
     st.markdown(f"**Subtotal Office Expenses:** `{money(office_total)}`")
 
 with col_exp_2:
-    st.subheader("3. Staff Advances & eSewa Transfers")
+    # Strictly titled "3. Staff Advances"
+    st.subheader("3. Staff Advances")
     staff_column_config = {
-        "Staff / Personnel Name": st.column_config.TextColumn("Staff / Purpose"),
-        "Purpose / Details": st.column_config.TextColumn("Details"),
-        "Payment Type": st.column_config.SelectboxColumn("Payment Type", options=["Staff Advance", "Remittance / eSewa", "Allowance", "Salary", "Other"]),
+        "Staff / Personnel Name": st.column_config.TextColumn("Staff / Receiver"),
+        "Purpose / Details": st.column_config.TextColumn("Details / Remarks"),
+        "Payment Type": st.column_config.SelectboxColumn("Type", options=["Staff Advance", "Allowance", "Salary", "Other"]),
         "Amount (Rs.)": st.column_config.NumberColumn("Amount (Rs.)", min_value=0.0, format="%.2f"),
         "Remarks": st.column_config.TextColumn("Remarks")
     }
@@ -388,7 +379,7 @@ with col_exp_2:
     )
     staff = numeric_columns(raw_staff, ["Amount (Rs.)"])
     staff_total = float(staff["Amount (Rs.)"].sum())
-    st.markdown(f"**Subtotal Staff & Remittances:** `{money(staff_total)}`")
+    st.markdown(f"**Subtotal Staff Advances:** `{money(staff_total)}`")
 
 total_expenses = office_total + staff_total
 net_cash = total_cash - total_expenses
@@ -397,43 +388,112 @@ sales_variance = total_sales - (total_cash + total_credit)
 st.divider()
 
 # =========================================================
-# CLIENT LEDGER EXPANDER
+# 4. AUTO-POPULATING CLIENT LEDGER & PRODUCT SUMMARY
 # =========================================================
 
-with st.expander("📊 Client Ledger & Receivables Reconciliation"):
-    st.caption("Track client-wise opening dues, current credit sales, cash receipts, and current balance.")
+st.subheader("4. Client Ledger & Product Sales Summary")
 
-    ledger_column_config = {
-        "Client / Party Name": st.column_config.TextColumn("Client / Party Name"),
-        "Reference": st.column_config.TextColumn("Ref / Area"),
-        "Previous Due (Rs.)": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
-        "New Credit (Rs.)": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
-        "Payment Received (Rs.)": st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
-        "Returns / Adjustments (Rs.)": st.column_config.NumberColumn(min_value=0.0, format="%.2f")
+valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
+
+# AUTO-GENERATE CLIENT LEDGER DIRECTLY FROM SALES GRID
+if not valid_sales.empty:
+    ledger_summary = valid_sales.groupby("Client / Party Name").agg(
+        New_Credit=("Credit Given (Rs.)", "sum"),
+        Payment_Received=("Cash Collected (Rs.)", "sum")
+    ).reset_index()
+
+    # Merge any previously entered Previous Dues
+    ledger_summary["Previous Due (Rs.)"] = ledger_summary["Client / Party Name"].apply(
+        lambda name: st.session_state["previous_dues"].get(name, 0.0)
+    )
+
+    ledger_summary["Current Due (Rs.)"] = (
+        ledger_summary["Previous Due (Rs.)"] + ledger_summary["New_Credit"] - ledger_summary["Payment_Received"]
+    )
+
+    # Reorder columns
+    ledger_df = ledger_summary[[
+        "Client / Party Name", "Previous Due (Rs.)", "New_Credit", "Payment_Received", "Current Due (Rs.)"
+    ]].rename(columns={
+        "New_Credit": "New Credit (Rs.)",
+        "Payment_Received": "Payment Received (Rs.)"
+    })
+else:
+    ledger_df = pd.DataFrame([{
+        "Client / Party Name": "No clients entered yet",
+        "Previous Due (Rs.)": 0.0,
+        "New Credit (Rs.)": 0.0,
+        "Payment Received (Rs.)": 0.0,
+        "Current Due (Rs.)": 0.0
+    }])
+
+st.markdown("##### 👤 Client Ledger (Auto-Synced from Sales)")
+st.caption("Clients, New Credit, and Payments are automatically pulled from Section 1 above. Edit Previous Due below if needed:")
+
+edited_ledger = st.data_editor(
+    ledger_df,
+    hide_index=True,
+    use_container_width=True,
+    key=f"auto_ledger_{current_form_id}",
+    column_config={
+        "Client / Party Name": st.column_config.TextColumn("Client / Party Name", disabled=True),
+        "Previous Due (Rs.)": st.column_config.NumberColumn("Previous Due (Rs.)", min_value=0.0, format="%.2f"),
+        "New Credit (Rs.)": st.column_config.NumberColumn("New Credit (Rs.)", disabled=True, format="%.2f"),
+        "Payment Received (Rs.)": st.column_config.NumberColumn("Payment Received (Rs.)", disabled=True, format="%.2f"),
+        "Current Due (Rs.)": st.column_config.NumberColumn("Current Due (Rs.)", disabled=True, format="%.2f")
     }
+)
 
-    raw_ledger = st.data_editor(
-        st.session_state["ledger_base"],
-        num_rows="dynamic",
-        hide_index=True,
-        use_container_width=True,
-        key=f"ledger_editor_stable_{current_form_id}",
-        column_config=ledger_column_config
-    )
+# Update session memory of Previous Dues
+for _, r in edited_ledger.iterrows():
+    c_name = str(r["Client / Party Name"]).strip()
+    if c_name and c_name != "No clients entered yet":
+        st.session_state["previous_dues"][c_name] = float(r.get("Previous Due (Rs.)", 0.0))
 
-    ledger = numeric_columns(raw_ledger, ["Previous Due (Rs.)", "New Credit (Rs.)", "Payment Received (Rs.)", "Returns / Adjustments (Rs.)"])
-    ledger["Current Due (Rs.)"] = (
-        ledger["Previous Due (Rs.)"] + ledger["New Credit (Rs.)"]
-        - ledger["Payment Received (Rs.)"] - ledger["Returns / Adjustments (Rs.)"]
-    )
-    ledger_outstanding = float(ledger["Current Due (Rs.)"].sum())
-    st.dataframe(ledger, use_container_width=True, hide_index=True)
+ledger_outstanding = float(edited_ledger["Current Due (Rs.)"].sum())
+
+# ----------------- PRODUCT SALES SUMMARY (BELOW LEDGER) -----------------
+st.write("")
+st.markdown("##### 📦 Total Products Sold Summary")
+st.caption("Automated totals specifying each product, billed quantity, bonus (FOC), and sales value:")
+
+valid_products = sales[sales["Goods / Product Name"].astype(str).str.strip() != ""]
+
+if not valid_products.empty:
+    prod_summary = valid_products.groupby("Goods / Product Name").agg(
+        Total_Billed_Qty=("Qty", "sum"),
+        Total_FOC_Qty=("FOC Qty", "sum"),
+        Total_Sales_Value=("Total Sale (Rs.)", "sum")
+    ).reset_index().rename(columns={
+        "Goods / Product Name": "Product / Item Name",
+        "Total_Billed_Qty": "Total Billed Qty",
+        "Total_FOC_Qty": "Total Free (FOC) Qty",
+        "Total_Sales_Value": "Total Sales Value (Rs.)"
+    })
+else:
+    prod_summary = pd.DataFrame([{
+        "Product / Item Name": "No products logged yet",
+        "Total Billed Qty": 0,
+        "Total Free (FOC) Qty": 0,
+        "Total Sales Value (Rs.)": 0.0
+    }])
+
+st.dataframe(
+    prod_summary,
+    hide_index=True,
+    use_container_width=True,
+    column_config={
+        "Total Sales Value (Rs.)": st.column_config.NumberColumn("Total Sales Value (Rs.)", format="%.2f")
+    }
+)
+
+st.divider()
 
 # =========================================================
-# 4. EXECUTIVE FINANCIAL CLOSING SUMMARY
+# 5. FINANCIAL CLOSING SUMMARY
 # =========================================================
 
-st.subheader("4. Financial Closing Summary")
+st.subheader("5. Financial Closing Summary")
 
 s1, s2, s3 = st.columns(3)
 s1.metric("Total Sales Billed", money(total_sales))
@@ -442,7 +502,7 @@ s3.metric("Gross Cash Collected", money(total_cash))
 
 s4, s5, s6 = st.columns(3)
 s4.metric("Operating Expenses (Nasta/Fuel)", money(office_total))
-s5.metric("Staff Advance & eSewa", money(staff_total))
+s5.metric("Staff Advances", money(staff_total))
 s6.metric("Total Deductions", money(total_expenses))
 
 s7, s8, s9 = st.columns(3)
@@ -451,7 +511,7 @@ s8.metric("Sales Variance", money(sales_variance), help="Total Sale minus (Cash 
 s9.metric("Total Client Dues Outstanding", money(ledger_outstanding))
 
 # =========================================================
-# REPORTLAB PDF GENERATOR
+# REPORTLAB PDF GENERATOR (INCLUDES PRODUCT SUMMARY)
 # =========================================================
 
 def pdf_table(data, widths, font_size=7):
@@ -528,8 +588,7 @@ def create_pdf():
     ]))
     story.append(meta_table)
 
-    valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
-
+    # 1. SALES ENTRIES
     story.append(Paragraph("1. SALES ENTRIES & RECOVERIES", sec_style))
     sales_header = ["S.N.", "Client / Party Name", "Goods / Product Name", "Qty", "FOC", "Rate", "Total Sale", "Cash", "Credit", "Address", "Invoice"]
     sales_rows = [sales_header]
@@ -558,19 +617,38 @@ def create_pdf():
         6.5
     ))
 
-    story.append(Spacer(1, 3))
-    story.append(Paragraph("2. EXPENSES & DISBURSEMENTS", sec_style))
+    # 2. PRODUCT SALES SUMMARY (DEDICATED TABLE IN PDF)
+    story.append(Spacer(1, 2))
+    story.append(Paragraph("2. PRODUCT SALES SUMMARY", sec_style))
+    prod_pdf_rows = [["Product / Item Name", "Total Billed Qty", "Total Free (FOC) Qty", "Total Sales Value (Rs.)"]]
+    
+    if not valid_products.empty:
+        for _, pr in prod_summary.iterrows():
+            prod_pdf_rows.append([
+                str(pr["Product / Item Name"]),
+                f'{pr["Total Billed Qty"]:g}',
+                f'{pr["Total Free (FOC) Qty"]:g}',
+                money(pr["Total Sales Value (Rs.)"])
+            ])
+    else:
+        prod_pdf_rows.append(["No products logged", "0", "0", money(0)])
+
+    story.append(pdf_table(prod_pdf_rows, [110*mm, 45*mm, 45*mm, 77*mm], 6.5))
+
+    # 3. EXPENSES & STAFF ADVANCES
+    story.append(Spacer(1, 2))
+    story.append(Paragraph("3. EXPENSES & STAFF ADVANCES", sec_style))
 
     valid_office = office[office["Expense Details"].astype(str).str.strip() != ""]
     valid_staff = staff[staff["Staff / Personnel Name"].astype(str).str.strip() != ""]
 
-    exp_data = [["Expense Details", "Paid To", "Mode", "Amount (Rs.)"]]
+    exp_data = [["Operating Expense Details", "Paid To", "Mode", "Amount (Rs.)"]]
     for _, r in valid_office.reset_index(drop=True).iterrows():
         exp_data.append([str(r["Expense Details"]), str(r["Paid To / Vendor"]), str(r["Payment Mode"]), money(r["Amount (Rs.)"])])
     if len(exp_data) == 1:
         exp_data.append(["No office expenses logged", "—", "—", money(0)])
 
-    staff_pdf_data = [["Staff / Remittance", "Purpose", "Type", "Amount (Rs.)"]]
+    staff_pdf_data = [["Staff Advances Name", "Purpose / Details", "Type", "Amount (Rs.)"]]
     for _, r in valid_staff.reset_index(drop=True).iterrows():
         staff_pdf_data.append([str(r["Staff / Personnel Name"]), str(r["Purpose / Details"]), str(r["Payment Type"]), money(r["Amount (Rs.)"])])
     if len(staff_pdf_data) == 1:
@@ -589,17 +667,19 @@ def create_pdf():
     ]))
     story.append(side_table)
 
+    # 4. SUMMARY
     story.append(Spacer(1, 4))
-    story.append(Paragraph("3. CLOSING FINANCIAL RECONCILIATION", sec_style))
+    story.append(Paragraph("4. CLOSING FINANCIAL RECONCILIATION", sec_style))
     sum_data = [
         ["Total Billed Sales", money(total_sales), "Gross Cash Collected", money(total_cash)],
         ["Total Credit Given", money(total_credit), "Total FOC Units", f"{total_foc:g}"],
-        ["Office Expenses", money(office_total), "Staff Advance / eSewa", money(staff_total)],
+        ["Office Expenses", money(office_total), "Staff Advances", money(staff_total)],
         ["Total Deductions", money(total_expenses), "NET CASH IN HAND", money(net_cash)]
     ]
     t_sum = pdf_table(sum_data, [50*mm, 45*mm, 50*mm, 45*mm], 7.5)
     story.append(t_sum)
 
+    # Signatures
     story.append(Spacer(1, 10))
     sig_data = [
         [
@@ -619,7 +699,7 @@ def create_pdf():
     return buffer.getvalue()
 
 # =========================================================
-# RFC-COMPLIANT EMAIL FUNCTION (Double-EHLO Handshake)
+# EMAIL DISPATCH HELPER (Double-EHLO Handshake)
 # =========================================================
 
 def email_pdf(pdf_bytes, sender, password, recipient):
@@ -658,12 +738,11 @@ def email_pdf(pdf_bytes, sender, password, recipient):
 
     context = ssl.create_default_context()
 
-    # Protocol 1: Port 587 with required double-EHLO handshake
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
         server.ehlo()
         server.starttls(context=context)
-        server.ehlo()  # CRITICAL: Prevents Gmail from dropping connection
+        server.ehlo()
         server.login(clean_sender, clean_password)
         server.send_message(msg)
         server.quit()
@@ -671,7 +750,6 @@ def email_pdf(pdf_bytes, sender, password, recipient):
     except smtplib.SMTPAuthenticationError:
         return False, "Google Authentication Error: Gmail rejected the password. Please check your 16-character App Password."
     except Exception:
-        # Protocol 2: Fallback to Port 465 SSL
         try:
             server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30)
             server.login(clean_sender, clean_password)
@@ -684,10 +762,10 @@ def email_pdf(pdf_bytes, sender, password, recipient):
             return False, f"Connection Failed: {err}"
 
 # =========================================================
-# 5. SUBMIT & EXPORT
+# 6. SUBMIT & EXPORT
 # =========================================================
 
-st.subheader("5. Verification & Submission")
+st.subheader("6. Verification & Submission")
 
 c_pin, c_sub1, c_sub2 = st.columns([1.2, 1.4, 1])
 
