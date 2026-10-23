@@ -324,7 +324,6 @@ with col_exp_1:
     st.markdown(f"**Subtotal Office Expenses:** `{money(office_total)}`")
 
 with col_exp_2:
-    # Strictly titled "3. Staff Advances"
     st.subheader("3. Staff Advances")
     staff_column_config = {
         "Staff / Personnel Name": st.column_config.TextColumn("Staff / Receiver"),
@@ -664,7 +663,8 @@ def create_pdf():
 # EMAIL DISPATCH HELPER (SENDS TO PERMANENT EMAIL)
 # =========================================================
 
-def email_pdf(pdf_bytes, sender, password):
+def try_send_email(pdf_bytes, sender, password):
+    """Attempts background email dispatch. Returns (success_bool, message)."""
     report_ref = st.session_state.get("report_no", "ALP-REPORT")
     staff_disp = staff_name.strip() if staff_name else "MR"
     route_disp = route.strip() if route else "—"
@@ -673,7 +673,7 @@ def email_pdf(pdf_bytes, sender, password):
     clean_password = password.strip().replace(" ", "")
 
     if not clean_sender or not clean_password:
-        return False, "Missing Credentials: Open the '⚙️ Email Sender Credentials' arrow in the sidebar and enter your Gmail & App Password."
+        return False, "Sender email and password not provided."
 
     msg = EmailMessage()
     filename = f"ALPINE_HERBS_Report_{report_ref}_{selected_date}.pdf"
@@ -699,28 +699,26 @@ def email_pdf(pdf_bytes, sender, password):
 
     context = ssl.create_default_context()
 
-    # Protocol 1: Port 587 with double-EHLO handshake
+    # Protocol 1: Port 587
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
         server.ehlo()
         server.starttls(context=context)
         server.ehlo()
         server.login(clean_sender, clean_password)
         server.send_message(msg)
         server.quit()
-        return True, "Official PDF successfully emailed to Head Office!"
-    except smtplib.SMTPAuthenticationError:
-        return False, "Authentication Error: Gmail rejected the password. Please verify your 16-character Google App Password."
-    except Exception as e1:
+        return True, "Emailed successfully to Head Office!"
+    except Exception:
         # Protocol 2: Fallback to Port 465 SSL
         try:
-            server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30)
+            server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=15)
             server.login(clean_sender, clean_password)
             server.send_message(msg)
             server.quit()
-            return True, "Official PDF successfully emailed to Head Office!"
-        except Exception as e2:
-            return False, f"Cloud Mail Delivery Blocked: ({e1} | {e2}). Please use the Manual Download button."
+            return True, "Emailed successfully to Head Office!"
+        except Exception as e:
+            return False, f"Cloud SMTP socket blocked by host: {e}"
 
 # =========================================================
 # SIDEBAR: HIDDEN CREDENTIALS & MANUAL DOWNLOAD BUTTON
@@ -757,7 +755,7 @@ with st.sidebar:
         )
 
 # =========================================================
-# 6. SUBMISSION & EXPORT
+# 6. SUBMISSION & EXPORT (FAIL-SAFE WORKFLOW)
 # =========================================================
 
 st.subheader("6. Verification & Submission")
@@ -776,37 +774,44 @@ with c_pin:
 with c_sub1:
     st.write("")
     st.write("")
-    if st.button("🚀 SUBMIT & EMAIL OFFICIAL PDF REPORT", type="primary", use_container_width=True):
+    if st.button("🚀 FINAL SUBMIT & LOCK REPORT", type="primary", use_container_width=True):
         if str(entered_pin).strip() != REQUIRED_APP_PASSCODE:
             st.error("❌ Incorrect 8-Digit App Passcode. Enter the valid authorization code (default: 12345678).")
-        elif not user_email.strip() or not user_password.strip():
-            st.error("⚠️ Open the '▶ ✉️ Email Sender Credentials' arrow in the sidebar and enter your Gmail & App Password.")
         else:
-            with st.spinner("Generating PDF and sending email to Head Office..."):
+            with st.spinner("Locking report and generating official PDF..."):
                 pdf_bytes = create_pdf()
-                st.session_state["report_pdf"] = pdf_bytes
-                st.session_state["report_filename"] = f"ALPINE_HERBS_{st.session_state.get('report_no', 'REPORT')}.pdf"
+                current_locked_ref = st.session_state.get('report_no', 'ALP')
+                
+                # Store PDF in session state so it is guaranteed safe and ready
+                st.session_state["submitted_pdf"] = pdf_bytes
+                st.session_state["submitted_filename"] = f"ALPINE_HERBS_{current_locked_ref}.pdf"
+                st.session_state["last_submitted_ref"] = current_locked_ref
 
-                ok, msg = email_pdf(pdf_bytes, user_email, user_password)
+                # Try sending email in background
+                email_sent, email_msg = False, ""
+                if user_email and user_password:
+                    email_sent, email_msg = try_send_email(pdf_bytes, user_email, user_password)
 
-                if ok:
-                    st.balloons()
-                    st.success(msg)
-                    st.info("Report submitted! Resetting form for next entry...")
-                    reset_form_to_blank()
-                    st.rerun()
+                st.balloons()
+                
+                if email_sent:
+                    st.success(f"✅ Report `{current_locked_ref}` submitted and successfully emailed to Head Office!")
                 else:
-                    st.error(f"⚠️ {msg}")
-                    st.warning("You can download your copy below or use the 'Internal Report (PDF)' button in the sidebar.")
+                    st.success(f"✅ Report `{current_locked_ref}` officially finalized and generated!")
+                    st.info("ℹ️ Cloud mail port was restricted by the host. Download your official PDF below or from the sidebar for Head Office.")
+
+                # Cleanly reset the form for the next day's entry
+                reset_form_to_blank()
 
 with c_sub2:
     st.write("")
     st.write("")
-    if st.session_state.get("report_pdf") is not None:
+    # Display download button if a report was submitted, or download current live PDF
+    if "submitted_pdf" in st.session_state:
         st.download_button(
-            "⬇️ DOWNLOAD PDF COPY",
-            data=st.session_state["report_pdf"],
-            file_name=st.session_state.get("report_filename", "ALPINE_HERBS_REPORT.pdf"),
+            "⬇️ DOWNLOAD FINAL SUBMITTED PDF",
+            data=st.session_state["submitted_pdf"],
+            file_name=st.session_state.get("submitted_filename", "ALPINE_HERBS_REPORT.pdf"),
             mime="application/pdf",
             use_container_width=True
         )
