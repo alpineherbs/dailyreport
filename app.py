@@ -16,7 +16,7 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # =========================================================
-# PAGE CONFIGURATION
+# PAGE CONFIGURATION & PERMANENT COMPANY EMAIL
 # =========================================================
 
 st.set_page_config(
@@ -25,7 +25,8 @@ st.set_page_config(
     layout="wide"
 )
 
-EMAIL_TO = st.secrets.get("smtp_to", "Alpineherbsinfo@gmail.com")
+# Permanent company recipient (Completely hidden from UI)
+PERMANENT_COMPANY_EMAIL = "Alpineherbsinfo@gmail.com"
 REQUIRED_APP_PASSCODE = str(st.secrets.get("app_passcode", "12345678"))
 
 # =========================================================
@@ -217,40 +218,6 @@ def reset_form_to_blank():
     st.session_state["previous_dues"] = {}
 
 # =========================================================
-# SIDEBAR: CREDENTIALS & CONTROLS
-# =========================================================
-
-with st.sidebar:
-    st.header("📧 Email Credentials")
-    st.caption("Enter your Gmail details to dispatch reports:")
-
-    user_email = st.text_input(
-        "Your Sender Gmail:",
-        placeholder="example@gmail.com",
-        help="The Gmail address used to send the report."
-    )
-
-    user_password = st.text_input(
-        "Your 16-Digit App Password:",
-        type="password",
-        placeholder="Enter App Password",
-        help="Google App Password generated from Google Account -> Security -> App passwords."
-    )
-
-    company_recipient = st.text_input(
-        "Send Report To:",
-        value="Alpineherbsinfo@gmail.com",
-        help="Destination email for daily reports."
-    )
-
-    st.divider()
-    st.info(f"**Report ID:** `{st.session_state.get('report_no', 'ALP')}`")
-
-    if st.button("🔄 Clear Form & Start Fresh"):
-        reset_form_to_blank()
-        st.rerun()
-
-# =========================================================
 # REPORT METADATA
 # =========================================================
 
@@ -278,7 +245,7 @@ st.divider()
 # =========================================================
 
 st.subheader("1. Sales & Cash Collections Grid")
-st.caption("Enter product sales. Credit Given automatically calculates as (Qty × Rate) - Cash Collected.")
+st.caption("Credit Given automatically calculates as (Qty × Rate) - Cash Collected. Values stay continuous upon pressing Enter or Tab.")
 
 sales_column_config = {
     "Client / Party Name": st.column_config.TextColumn("Client / Party Name"),
@@ -305,12 +272,10 @@ raw_sales = st.data_editor(
 
 sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
 
-# AUTOMATIC CREDIT CALCULATION:
-# If Qty * Rate > 0, Credit is automatically (Total Bill - Cash Collected)
+# Automatic Credit calculation: Total Bill - Cash
 computed_bill = sales["Qty"] * sales["Sale Rate (Rs.)"]
 auto_calculated_credit = (computed_bill - sales["Cash Collected (Rs.)"]).clip(lower=0.0)
 
-# Apply automatic credit where a sale was made, otherwise retain direct credit/recoveries
 sales["Credit Given (Rs.)"] = auto_calculated_credit.where(computed_bill > 0, sales["Credit Given (Rs.)"])
 sales["Total Sale (Rs.)"] = computed_bill.where(computed_bill > 0, sales["Cash Collected (Rs.)"] + sales["Credit Given (Rs.)"])
 
@@ -395,14 +360,13 @@ st.subheader("4. Client Ledger & Product Sales Summary")
 
 valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
 
-# AUTO-GENERATE CLIENT LEDGER DIRECTLY FROM SALES GRID
+# Auto-generate client ledger from Section 1
 if not valid_sales.empty:
     ledger_summary = valid_sales.groupby("Client / Party Name").agg(
         New_Credit=("Credit Given (Rs.)", "sum"),
         Payment_Received=("Cash Collected (Rs.)", "sum")
     ).reset_index()
 
-    # Merge any previously entered Previous Dues
     ledger_summary["Previous Due (Rs.)"] = ledger_summary["Client / Party Name"].apply(
         lambda name: st.session_state["previous_dues"].get(name, 0.0)
     )
@@ -411,7 +375,6 @@ if not valid_sales.empty:
         ledger_summary["Previous Due (Rs.)"] + ledger_summary["New_Credit"] - ledger_summary["Payment_Received"]
     )
 
-    # Reorder columns
     ledger_df = ledger_summary[[
         "Client / Party Name", "Previous Due (Rs.)", "New_Credit", "Payment_Received", "Current Due (Rs.)"
     ]].rename(columns={
@@ -444,7 +407,6 @@ edited_ledger = st.data_editor(
     }
 )
 
-# Update session memory of Previous Dues
 for _, r in edited_ledger.iterrows():
     c_name = str(r["Client / Party Name"]).strip()
     if c_name and c_name != "No clients entered yet":
@@ -452,10 +414,10 @@ for _, r in edited_ledger.iterrows():
 
 ledger_outstanding = float(edited_ledger["Current Due (Rs.)"].sum())
 
-# ----------------- PRODUCT SALES SUMMARY (BELOW LEDGER) -----------------
+# ----------------- PRODUCT SALES SUMMARY -----------------
 st.write("")
 st.markdown("##### 📦 Total Products Sold Summary")
-st.caption("Automated totals specifying each product, billed quantity, bonus (FOC), and sales value:")
+st.caption("Automated summary specifying each product, total billed quantity, bonus/FOC quantity, and sales amount:")
 
 valid_products = sales[sales["Goods / Product Name"].astype(str).str.strip() != ""]
 
@@ -511,7 +473,7 @@ s8.metric("Sales Variance", money(sales_variance), help="Total Sale minus (Cash 
 s9.metric("Total Client Dues Outstanding", money(ledger_outstanding))
 
 # =========================================================
-# REPORTLAB PDF GENERATOR (INCLUDES PRODUCT SUMMARY)
+# REPORTLAB PDF GENERATOR (A4 LANDSCAPE)
 # =========================================================
 
 def pdf_table(data, widths, font_size=7):
@@ -540,7 +502,7 @@ def create_pdf():
         leftMargin=10 * mm,
         topMargin=8 * mm,
         bottomMargin=8 * mm,
-        title="Alpine Herbs Daily Field Report"
+        title="Alpine Herbs Daily Report"
     )
 
     styles = getSampleStyleSheet()
@@ -617,11 +579,11 @@ def create_pdf():
         6.5
     ))
 
-    # 2. PRODUCT SALES SUMMARY (DEDICATED TABLE IN PDF)
+    # 2. PRODUCT SALES SUMMARY
     story.append(Spacer(1, 2))
     story.append(Paragraph("2. PRODUCT SALES SUMMARY", sec_style))
     prod_pdf_rows = [["Product / Item Name", "Total Billed Qty", "Total Free (FOC) Qty", "Total Sales Value (Rs.)"]]
-    
+
     if not valid_products.empty:
         for _, pr in prod_summary.iterrows():
             prod_pdf_rows.append([
@@ -699,26 +661,25 @@ def create_pdf():
     return buffer.getvalue()
 
 # =========================================================
-# EMAIL DISPATCH HELPER (Double-EHLO Handshake)
+# EMAIL DISPATCH HELPER (SENDS TO PERMANENT EMAIL)
 # =========================================================
 
-def email_pdf(pdf_bytes, sender, password, recipient):
+def email_pdf(pdf_bytes, sender, password):
     report_ref = st.session_state.get("report_no", "ALP-REPORT")
     staff_disp = staff_name.strip() if staff_name else "MR"
     route_disp = route.strip() if route else "—"
 
     clean_sender = sender.strip()
     clean_password = password.strip().replace(" ", "")
-    clean_recipient = recipient.strip()
 
     if not clean_sender or not clean_password:
-        return False, "Missing Credentials: Enter your Sender Gmail and App Password in the sidebar."
+        return False, "Missing Credentials: Open the '⚙️ Email Sender Credentials' arrow in the sidebar and enter your Gmail & App Password."
 
     msg = EmailMessage()
     filename = f"ALPINE_HERBS_Report_{report_ref}_{selected_date}.pdf"
     msg["Subject"] = f"[{report_ref}] Alpine Herbs Daily Report - {staff_disp} ({nepali_date(selected_date)})"
     msg["From"] = clean_sender
-    msg["To"] = clean_recipient
+    msg["To"] = PERMANENT_COMPANY_EMAIL
 
     msg.set_content(
         f"Dear Management,\n\n"
@@ -738,6 +699,7 @@ def email_pdf(pdf_bytes, sender, password, recipient):
 
     context = ssl.create_default_context()
 
+    # Protocol 1: Port 587 with double-EHLO handshake
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
         server.ehlo()
@@ -746,23 +708,56 @@ def email_pdf(pdf_bytes, sender, password, recipient):
         server.login(clean_sender, clean_password)
         server.send_message(msg)
         server.quit()
-        return True, f"Official PDF successfully emailed to {clean_recipient}!"
+        return True, "Official PDF successfully emailed to Head Office!"
     except smtplib.SMTPAuthenticationError:
-        return False, "Google Authentication Error: Gmail rejected the password. Please check your 16-character App Password."
-    except Exception:
+        return False, "Authentication Error: Gmail rejected the password. Please verify your 16-character Google App Password."
+    except Exception as e1:
+        # Protocol 2: Fallback to Port 465 SSL
         try:
             server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30)
             server.login(clean_sender, clean_password)
             server.send_message(msg)
             server.quit()
-            return True, f"Official PDF successfully emailed to {clean_recipient}!"
-        except smtplib.SMTPAuthenticationError:
-            return False, "Google Authentication Error: Gmail rejected the password. Please check your 16-character App Password."
-        except Exception as err:
-            return False, f"Connection Failed: {err}"
+            return True, "Official PDF successfully emailed to Head Office!"
+        except Exception as e2:
+            return False, f"Cloud Mail Delivery Blocked: ({e1} | {e2}). Please use the Manual Download button."
 
 # =========================================================
-# 6. SUBMIT & EXPORT
+# SIDEBAR: HIDDEN CREDENTIALS & MANUAL DOWNLOAD BUTTON
+# =========================================================
+
+with st.sidebar:
+    st.header("⚙️ Controls & Settings")
+    st.info(f"**Report ID:** `{st.session_state.get('report_no', 'ALP')}`")
+
+    # HIDDEN SENDER CREDENTIALS ACCORDION (WITH ARROW)
+    with st.expander("▶ ✉️ Email Sender Credentials", expanded=False):
+        st.caption("Your details are hidden here. Click to view or update:")
+        user_email = st.text_input("Sender Gmail:", placeholder="example@gmail.com")
+        user_password = st.text_input("16-Digit App Password:", type="password", placeholder="Enter App Password")
+
+    st.divider()
+
+    # ACTION BUTTONS SIDE-BY-SIDE
+    col_sb1, col_sb2 = st.columns(2)
+    with col_sb1:
+        if st.button("🔄 Clear Form", use_container_width=True):
+            reset_form_to_blank()
+            st.rerun()
+
+    with col_sb2:
+        # Instant Manual Download button for Internal Report
+        st.download_button(
+            "📥 Internal Report (PDF)",
+            data=create_pdf(),
+            file_name=f"Internal_Report_{st.session_state.get('report_no', 'ALP')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            help="Click anytime to manually download the internal PDF report."
+        )
+
+# =========================================================
+# 6. SUBMISSION & EXPORT
 # =========================================================
 
 st.subheader("6. Verification & Submission")
@@ -785,14 +780,14 @@ with c_sub1:
         if str(entered_pin).strip() != REQUIRED_APP_PASSCODE:
             st.error("❌ Incorrect 8-Digit App Passcode. Enter the valid authorization code (default: 12345678).")
         elif not user_email.strip() or not user_password.strip():
-            st.error("⚠️ Enter your Sender Gmail and App Password in the left sidebar before submitting.")
+            st.error("⚠️ Open the '▶ ✉️ Email Sender Credentials' arrow in the sidebar and enter your Gmail & App Password.")
         else:
-            with st.spinner("Generating PDF and sending email..."):
+            with st.spinner("Generating PDF and sending email to Head Office..."):
                 pdf_bytes = create_pdf()
                 st.session_state["report_pdf"] = pdf_bytes
                 st.session_state["report_filename"] = f"ALPINE_HERBS_{st.session_state.get('report_no', 'REPORT')}.pdf"
 
-                ok, msg = email_pdf(pdf_bytes, user_email, user_password, company_recipient)
+                ok, msg = email_pdf(pdf_bytes, user_email, user_password)
 
                 if ok:
                     st.balloons()
@@ -801,8 +796,8 @@ with c_sub1:
                     reset_form_to_blank()
                     st.rerun()
                 else:
-                    st.error(msg)
-                    st.warning("⚠️ The email could not be sent. You can still download your generated PDF copy below.")
+                    st.error(f"⚠️ {msg}")
+                    st.warning("You can download your copy below or use the 'Internal Report (PDF)' button in the sidebar.")
 
 with c_sub2:
     st.write("")
@@ -817,4 +812,5 @@ with c_sub2:
         )
 
 st.markdown("---")
-st.caption("🌿 ALPINE HERBS PVT. LTD. | Pharmaceutical Field Accounting System.")
+# STRICTLY LABELED AS REQUESTED
+st.caption("🌿 ALPINE HERBS PVT. LTD. | Daily Report System.")
