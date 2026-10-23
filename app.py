@@ -4,6 +4,7 @@ from datetime import date, datetime
 from io import BytesIO
 from email.message import EmailMessage
 import smtplib
+import ssl
 import uuid
 
 from reportlab.lib import colors
@@ -23,6 +24,9 @@ st.set_page_config(
     page_icon="🌿",
     layout="wide"
 )
+
+EMAIL_TO = st.secrets.get("smtp_to", "Alpineherbsinfo@gmail.com")
+REQUIRED_APP_PASSCODE = str(st.secrets.get("app_passcode", "12345678"))
 
 # =========================================================
 # BRAND STYLING
@@ -139,6 +143,7 @@ def generate_report_no(d):
     suffix = uuid.uuid4().hex[:4].upper()
     return f"ALP-{d.strftime('%Y%m%d')}-{suffix}"
 
+# Blank templates (Fresh empty tables)
 def blank_sales():
     return pd.DataFrame([{
         "Client / Party Name": "",
@@ -190,37 +195,47 @@ def numeric_columns(df, columns):
     return df
 
 # =========================================================
-# CACHE RECOVERY & INITIALIZATION
+# PERSISTENT SESSION STATE (Prevents input resets)
 # =========================================================
 
-CURRENT_SCHEMA = "v3.0_user_auth"
-if st.session_state.get("schema_version") != CURRENT_SCHEMA or not isinstance(st.session_state.get("sales"), pd.DataFrame):
-    st.session_state["schema_version"] = CURRENT_SCHEMA
-    st.session_state["sales"] = blank_sales()
-    st.session_state["office"] = blank_office()
-    st.session_state["staff"] = blank_staff()
-    st.session_state["ledger"] = blank_ledger()
+if "form_id" not in st.session_state:
     st.session_state["form_id"] = 1
+
+# Base tables are initialized once and NOT overwritten on every keystroke
+if "sales_base" not in st.session_state:
+    st.session_state["sales_base"] = blank_sales()
+
+if "office_base" not in st.session_state:
+    st.session_state["office_base"] = blank_office()
+
+if "staff_base" not in st.session_state:
+    st.session_state["staff_base"] = blank_staff()
+
+if "ledger_base" not in st.session_state:
+    st.session_state["ledger_base"] = blank_ledger()
+
+if "report_date" not in st.session_state:
     st.session_state["report_date"] = date.today()
+
+if "report_no" not in st.session_state:
     st.session_state["report_no"] = generate_report_no(date.today())
-    st.session_state["staff_name"] = ""
-    st.session_state["route"] = ""
 
 def reset_form_to_blank():
-    st.session_state["form_id"] = st.session_state.get("form_id", 1) + 1
+    """Advances form ID so Streamlit loads a fresh empty table without cached entries."""
+    st.session_state["form_id"] += 1
     st.session_state["report_no"] = generate_report_no(st.session_state.get("report_date", date.today()))
-    st.session_state["sales"] = blank_sales()
-    st.session_state["office"] = blank_office()
-    st.session_state["staff"] = blank_staff()
-    st.session_state["ledger"] = blank_ledger()
+    st.session_state["sales_base"] = blank_sales()
+    st.session_state["office_base"] = blank_office()
+    st.session_state["staff_base"] = blank_staff()
+    st.session_state["ledger_base"] = blank_ledger()
 
 # =========================================================
-# SIDEBAR: USER TYPES EMAIL & PASSWORD DIRECTLY HERE
+# SIDEBAR: CREDENTIALS & CONTROLS
 # =========================================================
 
 with st.sidebar:
     st.header("📧 Email Credentials")
-    st.caption("Enter your Gmail details below to send reports directly:")
+    st.caption("Enter your Gmail details to dispatch reports:")
 
     user_email = st.text_input(
         "Your Sender Gmail:",
@@ -229,20 +244,24 @@ with st.sidebar:
     )
 
     user_password = st.text_input(
-        "Your App Password:",
+        "Your 16-Digit App Password:",
         type="password",
-        placeholder="Enter 16-character App Password",
+        placeholder="Enter App Password",
         help="Google App Password generated from your Google Account -> Security -> App passwords."
     )
 
     company_recipient = st.text_input(
         "Send Report To:",
         value="Alpineherbsinfo@gmail.com",
-        help="The email address where management receives the PDF."
+        help="Destination email for daily reports."
     )
 
     st.divider()
     st.info(f"**Report ID:** `{st.session_state.get('report_no', 'ALP')}`")
+
+    if st.button("🔄 Clear Form & Start Fresh"):
+        reset_form_to_blank()
+        st.rerun()
 
 # =========================================================
 # REPORT METADATA
@@ -257,12 +276,10 @@ with c1:
     st.caption(f"🇳🇵 **Miti (B.S.):** `{nepali_date(selected_date)}`")
 
 with c2:
-    staff_name_input = st.text_input("MR / Staff Name", value=st.session_state.get("staff_name", ""), placeholder="e.g. Pritam Gupta")
-    st.session_state["staff_name"] = staff_name_input
+    staff_name = st.text_input("MR / Staff Name", placeholder="e.g. Pritam Gupta")
 
 with c3:
-    route_input = st.text_input("Route / Area Covered", value=st.session_state.get("route", ""), placeholder="e.g. Birgunj To Lautan")
-    st.session_state["route"] = route_input
+    route = st.text_input("Route / Area Covered", placeholder="e.g. Birgunj To Lautan")
 
 with c4:
     st.text_input("Report Reference No.", value=st.session_state.get("report_no", ""), disabled=True)
@@ -270,11 +287,11 @@ with c4:
 st.divider()
 
 # =========================================================
-# 1. SALES & CASH COLLECTION ENTRIES
+# 1. SALES ENTRIES (Continuous Tab / Enter Flow)
 # =========================================================
 
 st.subheader("1. Sales & Cash Collections Grid")
-st.caption("Enter product sales or cash collections. Click any cell to edit or use '+' at the bottom to add rows.")
+st.caption("Type values and use Tab or Enter. Edits will stay continuously without resetting.")
 
 sales_column_config = {
     "Client / Party Name": st.column_config.TextColumn("Client / Party Name"),
@@ -288,26 +305,24 @@ sales_column_config = {
     "Invoice No.": st.column_config.TextColumn("Invoice / Bill No.")
 }
 
-sales = st.data_editor(
-    st.session_state.get("sales", blank_sales()),
+current_form_id = st.session_state["form_id"]
+
+# Notice: Data source is passed from sales_base without re-writing sales_base on every rerun
+raw_sales = st.data_editor(
+    st.session_state["sales_base"],
     num_rows="dynamic",
     hide_index=True,
     use_container_width=True,
-    key=f"sales_grid_{st.session_state.get('form_id', 1)}",
+    key=f"sales_editor_stable_{current_form_id}",
     column_config=sales_column_config
 )
 
-sales = numeric_columns(sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
+sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
 
-if "Qty" in sales.columns and "Sale Rate (Rs.)" in sales.columns:
-    computed_sale = sales["Qty"] * sales["Sale Rate (Rs.)"]
-else:
-    computed_sale = pd.Series(0.0, index=sales.index)
-
+# Robust Sales Math
+computed_sale = sales["Qty"] * sales["Sale Rate (Rs.)"]
 direct_components = sales["Cash Collected (Rs.)"] + sales["Credit Given (Rs.)"]
 sales["Total Sale (Rs.)"] = computed_sale.where(computed_sale > 0, direct_components)
-
-st.session_state["sales"] = sales.drop(columns=["Total Sale (Rs.)"], errors="ignore")
 
 total_sales = float(sales["Total Sale (Rs.)"].sum())
 total_cash = float(sales["Cash Collected (Rs.)"].sum())
@@ -315,6 +330,7 @@ total_credit = float(sales["Credit Given (Rs.)"].sum())
 total_foc = float(sales["FOC Qty"].sum())
 total_qty = float(sales["Qty"].sum())
 
+# Metrics Strip
 m1, m2, m3, m4, m5 = st.columns(5)
 m1.metric("Total Billed Sales", money(total_sales))
 m2.metric("Gross Cash Collected", money(total_cash))
@@ -332,8 +348,6 @@ col_exp_1, col_exp_2 = st.columns(2)
 
 with col_exp_1:
     st.subheader("2. Operating / Office Expenses")
-    st.caption("Nasta, Fuel, Maintenance, and field costs.")
-
     office_column_config = {
         "Expense Details": st.column_config.TextColumn("Expense Details"),
         "Paid To / Vendor": st.column_config.TextColumn("Paid To"),
@@ -342,23 +356,20 @@ with col_exp_1:
         "Remarks": st.column_config.TextColumn("Remarks")
     }
 
-    office = st.data_editor(
-        st.session_state.get("office", blank_office()),
+    raw_office = st.data_editor(
+        st.session_state["office_base"],
         num_rows="dynamic",
         hide_index=True,
         use_container_width=True,
-        key=f"office_grid_{st.session_state.get('form_id', 1)}",
+        key=f"office_editor_stable_{current_form_id}",
         column_config=office_column_config
     )
-    office = numeric_columns(office, ["Amount (Rs.)"])
-    st.session_state["office"] = office
+    office = numeric_columns(raw_office, ["Amount (Rs.)"])
     office_total = float(office["Amount (Rs.)"].sum())
     st.markdown(f"**Subtotal Office Expenses:** `{money(office_total)}`")
 
 with col_exp_2:
     st.subheader("3. Staff Advances & eSewa Transfers")
-    st.caption("MR advance, Karan advance, eSewa remittance to HO.")
-
     staff_column_config = {
         "Staff / Personnel Name": st.column_config.TextColumn("Staff / Purpose"),
         "Purpose / Details": st.column_config.TextColumn("Details"),
@@ -367,16 +378,15 @@ with col_exp_2:
         "Remarks": st.column_config.TextColumn("Remarks")
     }
 
-    staff = st.data_editor(
-        st.session_state.get("staff", blank_staff()),
+    raw_staff = st.data_editor(
+        st.session_state["staff_base"],
         num_rows="dynamic",
         hide_index=True,
         use_container_width=True,
-        key=f"staff_grid_{st.session_state.get('form_id', 1)}",
+        key=f"staff_editor_stable_{current_form_id}",
         column_config=staff_column_config
     )
-    staff = numeric_columns(staff, ["Amount (Rs.)"])
-    st.session_state["staff"] = staff
+    staff = numeric_columns(raw_staff, ["Amount (Rs.)"])
     staff_total = float(staff["Amount (Rs.)"].sum())
     st.markdown(f"**Subtotal Staff & Remittances:** `{money(staff_total)}`")
 
@@ -402,27 +412,25 @@ with st.expander("📊 Client Ledger & Receivables Reconciliation"):
         "Returns / Adjustments (Rs.)": st.column_config.NumberColumn(min_value=0.0, format="%.2f")
     }
 
-    ledger = st.data_editor(
-        st.session_state.get("ledger", blank_ledger()),
+    raw_ledger = st.data_editor(
+        st.session_state["ledger_base"],
         num_rows="dynamic",
         hide_index=True,
         use_container_width=True,
-        key=f"ledger_grid_{st.session_state.get('form_id', 1)}",
+        key=f"ledger_editor_stable_{current_form_id}",
         column_config=ledger_column_config
     )
 
-    ledger = numeric_columns(ledger, ["Previous Due (Rs.)", "New Credit (Rs.)", "Payment Received (Rs.)", "Returns / Adjustments (Rs.)"])
+    ledger = numeric_columns(raw_ledger, ["Previous Due (Rs.)", "New Credit (Rs.)", "Payment Received (Rs.)", "Returns / Adjustments (Rs.)"])
     ledger["Current Due (Rs.)"] = (
         ledger["Previous Due (Rs.)"] + ledger["New Credit (Rs.)"]
         - ledger["Payment Received (Rs.)"] - ledger["Returns / Adjustments (Rs.)"]
     )
-    st.session_state["ledger"] = ledger.drop(columns=["Current Due (Rs.)"], errors="ignore")
-
     ledger_outstanding = float(ledger["Current Due (Rs.)"].sum())
     st.dataframe(ledger, use_container_width=True, hide_index=True)
 
 # =========================================================
-# 4. FINANCIAL CLOSING SUMMARY
+# 4. EXECUTIVE FINANCIAL CLOSING SUMMARY
 # =========================================================
 
 st.subheader("4. Financial Closing Summary")
@@ -498,12 +506,12 @@ def create_pdf():
     ]
 
     current_report_no = st.session_state.get("report_no", "ALP-REPORT")
-    current_staff = st.session_state.get("staff_name", "—")
-    current_route = st.session_state.get("route", "—")
+    current_staff = staff_name.strip() if staff_name else "—"
+    current_route = route.strip() if route else "—"
 
     info_data = [
         ["English Date", selected_date.strftime("%d-%b-%Y"), "Nepali Miti (B.S.)", nepali_date(selected_date)],
-        ["MR / Personnel", current_staff or "—", "Route / Area", current_route or "—"],
+        ["MR / Personnel", current_staff, "Route / Area", current_route],
         ["Reference No.", current_report_no, "Generated At", datetime.now().strftime("%d-%b-%Y %H:%M")]
     ]
     meta_table = Table(info_data, colWidths=[28*mm, 75*mm, 35*mm, 139*mm])
@@ -520,7 +528,7 @@ def create_pdf():
     ]))
     story.append(meta_table)
 
-    valid_sales = sales[sales["Client / Party Name"].str.strip() != ""]
+    valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
 
     story.append(Paragraph("1. SALES ENTRIES & RECOVERIES", sec_style))
     sales_header = ["S.N.", "Client / Party Name", "Goods / Product Name", "Qty", "FOC", "Rate", "Total Sale", "Cash", "Credit", "Address", "Invoice"]
@@ -553,8 +561,8 @@ def create_pdf():
     story.append(Spacer(1, 3))
     story.append(Paragraph("2. EXPENSES & DISBURSEMENTS", sec_style))
 
-    valid_office = office[office["Expense Details"].str.strip() != ""]
-    valid_staff = staff[staff["Staff / Personnel Name"].str.strip() != ""]
+    valid_office = office[office["Expense Details"].astype(str).str.strip() != ""]
+    valid_staff = staff[staff["Staff / Personnel Name"].astype(str).str.strip() != ""]
 
     exp_data = [["Expense Details", "Paid To", "Mode", "Amount (Rs.)"]]
     for _, r in valid_office.reset_index(drop=True).iterrows():
@@ -611,23 +619,26 @@ def create_pdf():
     return buffer.getvalue()
 
 # =========================================================
-# EMAIL DISPATCH HELPER (USES UI INPUTS)
+# RFC-COMPLIANT EMAIL FUNCTION (Double-EHLO Handshake)
 # =========================================================
 
 def email_pdf(pdf_bytes, sender, password, recipient):
     report_ref = st.session_state.get("report_no", "ALP-REPORT")
-    staff_disp = st.session_state.get("staff_name", "MR")
-    route_disp = st.session_state.get("route", "—")
-    smtp_host = "smtp.gmail.com"
+    staff_disp = staff_name.strip() if staff_name else "MR"
+    route_disp = route.strip() if route else "—"
 
-    if not sender.strip() or not password.strip():
+    clean_sender = sender.strip()
+    clean_password = password.strip().replace(" ", "")
+    clean_recipient = recipient.strip()
+
+    if not clean_sender or not clean_password:
         return False, "Missing Credentials: Enter your Sender Gmail and App Password in the sidebar."
 
     msg = EmailMessage()
     filename = f"ALPINE_HERBS_Report_{report_ref}_{selected_date}.pdf"
     msg["Subject"] = f"[{report_ref}] Alpine Herbs Daily Report - {staff_disp} ({nepali_date(selected_date)})"
-    msg["From"] = sender.strip()
-    msg["To"] = recipient.strip()
+    msg["From"] = clean_sender
+    msg["To"] = clean_recipient
 
     msg.set_content(
         f"Dear Management,\n\n"
@@ -645,25 +656,32 @@ def email_pdf(pdf_bytes, sender, password, recipient):
 
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
 
-    # Clean the password of any accidental spaces
-    clean_password = password.strip().replace(" ", "")
+    context = ssl.create_default_context()
 
+    # Protocol 1: Port 587 with required double-EHLO handshake
     try:
-        with smtplib.SMTP_SSL(smtp_host, 465, timeout=20) as server:
-            server.login(sender.strip(), clean_password)
-            server.send_message(msg)
-        return True, f"Official PDF successfully emailed to {recipient}!"
+        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+        server.ehlo()
+        server.starttls(context=context)
+        server.ehlo()  # CRITICAL: Prevents Gmail from dropping connection
+        server.login(clean_sender, clean_password)
+        server.send_message(msg)
+        server.quit()
+        return True, f"Official PDF successfully emailed to {clean_recipient}!"
+    except smtplib.SMTPAuthenticationError:
+        return False, "Google Authentication Error: Gmail rejected the password. Please check your 16-character App Password."
     except Exception:
+        # Protocol 2: Fallback to Port 465 SSL
         try:
-            with smtplib.SMTP(smtp_host, 587, timeout=20) as server:
-                server.starttls()
-                server.login(sender.strip(), clean_password)
-                server.send_message(msg)
-            return True, f"Official PDF successfully emailed to {recipient}!"
+            server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30)
+            server.login(clean_sender, clean_password)
+            server.send_message(msg)
+            server.quit()
+            return True, f"Official PDF successfully emailed to {clean_recipient}!"
         except smtplib.SMTPAuthenticationError:
-            return False, "Google Authentication Error: Gmail rejected the password. Please ensure you are using a 16-character Google App Password (not your normal Gmail password)."
-        except Exception as exc:
-            return False, f"Connection Error: {exc}"
+            return False, "Google Authentication Error: Gmail rejected the password. Please check your 16-character App Password."
+        except Exception as err:
+            return False, f"Connection Failed: {err}"
 
 # =========================================================
 # 5. SUBMIT & EXPORT
@@ -671,12 +689,25 @@ def email_pdf(pdf_bytes, sender, password, recipient):
 
 st.subheader("5. Verification & Submission")
 
-c_sub1, c_sub2 = st.columns([1.5, 1])
+c_pin, c_sub1, c_sub2 = st.columns([1.2, 1.4, 1])
+
+with c_pin:
+    entered_pin = st.text_input(
+        "Enter 8-Digit App Passcode:",
+        type="password",
+        max_chars=8,
+        placeholder="8-digit passcode",
+        help="Enter the 8-digit authorization passcode to submit."
+    )
 
 with c_sub1:
+    st.write("")
+    st.write("")
     if st.button("🚀 SUBMIT & EMAIL OFFICIAL PDF REPORT", type="primary", use_container_width=True):
-        if not user_email.strip() or not user_password.strip():
-            st.error("⚠️ Please fill in your Sender Gmail and App Password in the left sidebar before submitting.")
+        if str(entered_pin).strip() != REQUIRED_APP_PASSCODE:
+            st.error("❌ Incorrect 8-Digit App Passcode. Enter the valid authorization code (default: 12345678).")
+        elif not user_email.strip() or not user_password.strip():
+            st.error("⚠️ Enter your Sender Gmail and App Password in the left sidebar before submitting.")
         else:
             with st.spinner("Generating PDF and sending email..."):
                 pdf_bytes = create_pdf()
@@ -696,6 +727,8 @@ with c_sub1:
                     st.warning("⚠️ The email could not be sent. You can still download your generated PDF copy below.")
 
 with c_sub2:
+    st.write("")
+    st.write("")
     if st.session_state.get("report_pdf") is not None:
         st.download_button(
             "⬇️ DOWNLOAD PDF COPY",
