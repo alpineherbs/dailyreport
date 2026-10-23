@@ -434,4 +434,159 @@ def create_pdf():
 
     t_sales = Table(sales_rows, colWidths=[8*mm, 45*mm, 42*mm, 11*mm, 10*mm, 18*mm, 23*mm, 22*mm, 22*mm, 52*mm, 24*mm], repeatRows=1)
     t_sales.setStyle(TableStyle([
-        ("BACKGROUND", (0,
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(ALPINE_PRIMARY)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(ALPINE_BORDER)),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(ALPINE_MINT)])
+    ]))
+    story.append(t_sales)
+
+    # Expenses Table
+    story.append(Paragraph("2. FIELD EXPENSES & REMITTANCES", sec_style))
+    exp_rows = [["Type", "Details", "Paid To / Staff", "Mode", "Amount (Rs.)"]]
+
+    valid_office = office[office["Expense Details"].str.strip() != ""]
+    valid_staff = staff[staff["Staff / Personnel Name"].str.strip() != ""]
+
+    for _, r in valid_office.iterrows():
+        exp_rows.append(["Operating", str(r["Expense Details"]), str(r["Paid To / Vendor"]), str(r["Payment Mode"]), money(r["Amount (Rs.)"])])
+    for _, r in valid_staff.iterrows():
+        exp_rows.append(["Staff/eSewa", str(r["Purpose / Details"]), str(r["Staff / Personnel Name"]), str(r["Payment Type"]), money(r["Amount (Rs.)"])])
+
+    if len(exp_rows) == 1:
+        exp_rows.append(["—", "No expenses or advances logged", "—", "—", "Rs. 0.00"])
+
+    t_exp = Table(exp_rows, colWidths=[25*mm, 90*mm, 70*mm, 45*mm, 47*mm], repeatRows=1)
+    t_exp.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(ALPINE_PRIMARY)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(ALPINE_BORDER))
+    ]))
+    story.append(t_exp)
+
+    # Summary
+    story.append(Paragraph("3. RECONCILIATION SUMMARY", sec_style))
+    sum_data = [
+        ["Total Billed Sales", money(total_sales), "Gross Cash Collected", money(total_cash)],
+        ["Total Credit Given", money(total_credit), "Total Field Expenses", money(total_expenses)],
+        ["Total Units Sold", f"{total_qty:g}", "NET CASH IN HAND", money(net_cash)]
+    ]
+    t_sum = Table(sum_data, colWidths=[50*mm, 45*mm, 50*mm, 45*mm])
+    t_sum.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor(ALPINE_BORDER)),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(ALPINE_MINT))
+    ]))
+    story.append(t_sum)
+
+    # Signatures
+    story.append(Spacer(1, 10))
+    sig_data = [["Prepared by (MR): ____________________", "Checked by (Accounts): ____________________", "Approved by: ____________________"]]
+    t_sig = Table(sig_data, colWidths=[92*mm, 92*mm, 93*mm])
+    t_sig.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 7), ("ALIGN", (0, 0), (-1, -1), "CENTER")]))
+    story.append(t_sig)
+
+    doc.build(story)
+    return buffer.getvalue()
+
+# =========================================================
+# EMAIL SUBMISSION ENGINE (SSL PORT 465)
+# =========================================================
+
+def send_email_report(pdf_bytes):
+    # Retrieve credentials: UI inputs take priority, fallback to secrets
+    sender = smtp_user.strip() or st.secrets.get("smtp_user", "")
+    password = smtp_password.strip() or st.secrets.get("smtp_password", "")
+    host = st.secrets.get("smtp_host", "smtp.gmail.com")
+
+    if not sender or not password:
+        return False, "Missing credentials: Please enter your Sender Gmail and App Password in the sidebar."
+
+    try:
+        msg = EmailMessage()
+        filename = f"ALPINE_HERBS_{st.session_state.report_no}_{report_date}.pdf"
+        msg["Subject"] = f"[{st.session_state.report_no}] Daily Report - {staff_name or 'MR'} ({nepali_date(report_date)})"
+        msg["From"] = sender
+        msg["To"] = target_email
+
+        msg.set_content(
+            f"Dear Team,\n\n"
+            f"Attached is the daily closing report for Alpine Herbs Pvt. Ltd.\n\n"
+            f"Ref: {st.session_state.report_no}\n"
+            f"Date: {report_date} ({nepali_date(report_date)})\n"
+            f"MR Name: {staff_name}\n"
+            f"Route: {route}\n"
+            f"Gross Cash Collected: {money(total_cash)}\n"
+            f"Credit Given: {money(total_credit)}\n"
+            f"Expenses & Advances: {money(total_expenses)}\n"
+            f"NET CASH IN HAND: {money(net_cash)}\n\n"
+            f"Regards,\nField Operations"
+        )
+
+        msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
+
+        # Connection Logic: Port 465 (SSL) is far more reliable on cloud servers than Port 587
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, 465, timeout=20) as server:
+                server.login(sender, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(host, 587, timeout=20) as server:
+                server.starttls()
+                server.login(sender, password)
+                server.send_message(msg)
+
+        return True, f"Report successfully emailed to {target_email}!"
+
+    except smtplib.SMTPAuthenticationError:
+        return False, "Authentication Error: Google rejected the login. Please check that you are using a 16-digit Google App Password, not your normal password."
+    except Exception as e:
+        return False, f"Connection Error: {str(e)}"
+
+# =========================================================
+# 5. SUBMISSION & PDF SAVE
+# =========================================================
+
+st.subheader("5. Submit Report")
+st.write("Submitting will generate the official PDF, email it, and clear the screen for the next daily entry.")
+
+c_btn, c_down = st.columns([1.5, 1])
+
+with c_btn:
+    if st.button("🚀 SUBMIT, EMAIL & START NEW ENTRY", type="primary", use_container_width=True):
+        with st.spinner("Generating PDF and sending email..."):
+            pdf_data = create_pdf()
+            st.session_state["last_pdf"] = pdf_data
+            st.session_state["last_ref"] = st.session_state.report_no
+            
+            ok, msg = send_email_report(pdf_data)
+            
+            if ok:
+                st.balloons()
+                st.success(msg)
+                st.info("Form submitted successfully! Resetting to a blank form for your next entry...")
+                # Automatically reset to blank
+                reset_all_for_next_entry()
+                st.rerun()
+            else:
+                st.error(f"⚠️ {msg}")
+                st.warning("The PDF has been generated and saved below so you don't lose your work.")
+
+with c_down:
+    if "last_pdf" in st.session_state:
+        st.download_button(
+            "⬇️ DOWNLOAD GENERATED PDF",
+            data=st.session_state["last_pdf"],
+            file_name=f"Report_{st.session_state.get('last_ref', 'EOD')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+
+st.markdown("---")
+st.caption("🌿 ALPINE HERBS PVT. LTD. | Daily Field Reporting Portal. PDF format only.")
