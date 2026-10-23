@@ -1,301 +1,259 @@
 import streamlit as st
 import pandas as pd
-import json
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from datetime import datetime, date
-import uuid
-import os
-from openai import OpenAI
+from datetime import date
+from io import BytesIO
 
-# Try importing nepali_datetime for automatic BS conversion
-try:
-    import nepali_datetime
-    NEPALI_LIB_AVAILABLE = True
-except ImportError:
-    NEPALI_LIB_AVAILABLE = False
+st.set_page_config(page_title="WENS Daily Report", page_icon="📊", layout="wide")
 
-# ----------------- CONFIGURATION & SECRETS -----------------
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", "your-openai-api-key"))
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", os.getenv("SENDER_EMAIL", "your-email@gmail.com"))
-SENDER_PASSWORD = st.secrets.get("SENDER_PASSWORD", os.getenv("SENDER_PASSWORD", "your-app-password"))
-REPORT_RECEIVER_EMAIL = st.secrets.get("REPORT_RECEIVER_EMAIL", os.getenv("REPORT_RECEIVER_EMAIL", "accounts@alpineherbs.com"))
-
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# ----------------- HELPER: NEPALI DATE & REF CODE -----------------
-def get_nepali_date(ad_date: date) -> str:
-    if NEPALI_LIB_AVAILABLE:
-        try:
-            return nepali_datetime.date.from_datetime_date(ad_date).strftime("%Y-%m-%d")
-        except Exception:
-            pass
-    return "2083-07-04"
-
-# ----------------- SESSION STATE -----------------
-today_ad = datetime.today().date()
-if "ad_date" not in st.session_state:
-    st.session_state.ad_date = today_ad
-
-current_bs_date = get_nepali_date(st.session_state.ad_date)
-
-if "reference_no" not in st.session_state:
-    unique_suffix = uuid.uuid4().hex[:4].upper()
-    date_code = today_ad.strftime("%Y%m%d")
-    st.session_state.reference_no = f"ALP-{date_code}-{unique_suffix}"
-
-# Pre-populate sample rows matching the Alpine Herbs XLS format if empty
-if "records" not in st.session_state:
-    st.session_state.records = [
-        {"QTY": 10, "Party Name": "Ali health clinic", "Particulars": "Narayani zyme 100ml", "Free (FOC)": 10, "Cash Collected": 0.0, "Credit Sales": 1724.0, "Sales Rate": 172.4, "Buyer Address": "Birgunj"},
-        {"QTY": 10, "Party Name": "Ali health clinic", "Particulars": "Narayani zyme 200ml", "Free (FOC)": 10, "Cash Collected": 0.0, "Credit Sales": 1034.0, "Sales Rate": 103.4, "Buyer Address": "Birgunj"},
-        {"QTY": 10, "Party Name": "Shoalal medical", "Particulars": "Provita", "Free (FOC)": 0, "Cash Collected": 0.0, "Credit Sales": 1500.0, "Sales Rate": 150.0, "Buyer Address": "Lautan"},
-        {"QTY": 0, "Party Name": "Ali health clinic", "Particulars": "Old Balance Recovery", "Free (FOC)": 0, "Cash Collected": 1500.0, "Credit Sales": 0.0, "Sales Rate": 0.0, "Buyer Address": "Birgunj"},
-        {"QTY": 0, "Party Name": "Shoalal medical", "Particulars": "Old Balance Recovery", "Free (FOC)": 0, "Cash Collected": 700.0, "Credit Sales": 0.0, "Sales Rate": 0.0, "Buyer Address": "Lautan"},
-        {"QTY": 0, "Party Name": "Satya medical", "Particulars": "Old Balance Recovery", "Free (FOC)": 0, "Cash Collected": 900.0, "Credit Sales": 0.0, "Sales Rate": 0.0, "Buyer Address": "Lautan"},
-        {"QTY": 0, "Party Name": "Jay shree gadimai medical", "Particulars": "Old Balance Recovery", "Free (FOC)": 0, "Cash Collected": 500.0, "Credit Sales": 0.0, "Sales Rate": 0.0, "Buyer Address": "Birgunj"},
-        {"QTY": 0, "Party Name": "Alex medical", "Particulars": "Old Balance Recovery", "Free (FOC)": 0, "Cash Collected": 500.0, "Credit Sales": 0.0, "Sales Rate": 0.0, "Buyer Address": "Birgunj"},
-        {"QTY": 0, "Party Name": "Om shiv shakti medical", "Particulars": "Old Balance Recovery", "Free (FOC)": 0, "Cash Collected": 500.0, "Credit Sales": 0.0, "Sales Rate": 0.0, "Buyer Address": "Birgunj"},
-    ]
-
-if "expenses" not in st.session_state:
-    st.session_state.expenses = [
-        {"Category": "Nasta (Food)", "Particulars": "MR Nasta", "Amount": 50.0},
-        {"Category": "Staff Advance", "Particulars": "Karan Advance", "Amount": 300.0},
-        {"Category": "eSewa Deposit", "Particulars": "Online Remittance to Office", "Amount": 1700.0},
-        {"Category": "Fuel", "Particulars": "FZ Bike Fuel", "Amount": 0.0},
-    ]
-
-# ----------------- AI PARSER ENGINE -----------------
-def parse_field_entry_with_ai(natural_text: str):
-    system_prompt = """
-    You are an AI assistant for ALPINE HERBS PVT. LTD. (Nepal).
-    Extract sales, collections, and expenses from the user's input into JSON:
-    {
-      "records": [
-        {"QTY": int, "Party Name": str, "Particulars": str, "Free (FOC)": int, "Cash Collected": float, "Credit Sales": float, "Sales Rate": float, "Buyer Address": str}
-      ],
-      "expenses": [
-        {"Category": "Nasta (Food)" | "Fuel" | "Staff Advance" | "eSewa Deposit" | "Maintenance" | "Office Nasta" | "Extra", "Particulars": str, "Amount": float}
-      ]
-    }
-    Always output strict JSON.
-    """
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": natural_text}
-        ],
-        response_format={"type": "json_object"}
-    )
-    return json.loads(response.choices[0].message.content)
-
-# ----------------- EMAIL DISPATCH -----------------
-def send_eod_email(subject: str, html_body: str):
-    msg = MIMEMultipart()
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = REPORT_RECEIVER_EMAIL
-    msg['Subject'] = subject
-    msg.attach(MIMEText(html_body, 'html'))
-
-    try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, REPORT_RECEIVER_EMAIL, msg.as_string())
-        server.quit()
-        return True, "Report successfully sent to management!"
-    except Exception as e:
-        return False, str(e)
-
-# ----------------- STREAMLIT UI -----------------
-st.set_page_config(page_title="Alpine Herbs - Daily MR Report", layout="wide")
-
-# Company Header
+# ---------- Styling ----------
 st.markdown("""
-<div style='text-align: center; border-bottom: 2px solid #2e7d32; padding-bottom: 10px; margin-bottom: 20px;'>
-    <h2 style='color: #1b5e20; margin: 0;'>ALPINE HERBS PVT. LTD.</h2>
-    <p style='margin: 0; color: #555; font-size: 14px;'>Birgunj, Nepal | Daily Sales, Collection & Expense Ledger</p>
-</div>
+<style>
+.block-container {padding-top: 1.1rem; padding-bottom: 1rem; max-width: 1600px;}
+h1, h2, h3 {color: #17365D;}
+div[data-testid="stMetric"] {
+    background: #F3F7FA; border: 1px solid #D8E3EA;
+    padding: 12px 14px; border-radius: 10px;
+}
+.small-note {color:#52616B; font-size:0.88rem;}
+</style>
 """, unsafe_allow_html=True)
 
-# Sidebar: Metadata & Info
-with st.sidebar:
-    st.header("📌 Tour Details")
-    st.info(f"**Reference No:** `{st.session_state.reference_no}`")
-    
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        miti_bs = st.text_input("Date (B.S. Miti)", value=current_bs_date)
-    with col_d2:
-        date_ad = st.date_input("Date (A.D.)", value=st.session_state.ad_date)
-        
-    mr_name = st.text_input("MR Name", value="Pritam Gupta")
-    mr_address = st.text_input("Address / HQ", value="Birgunj")
-    tour_route = st.text_input("Tour Location / Route", value="Birgunj To Lautan")
-    verifier_name = st.text_input("Verifying Person", value="Accounts Manager")
-    report_email = st.text_input("Email Report To", value=REPORT_RECEIVER_EMAIL)
+st.title("WENS | Daily Sales, Cash & Client Ledger")
+st.caption("Single-page daily report • Sales • FOC • Expenses • Cash closing • Client ledger")
 
-# 1. AI Quick Voice / Text Parser
-with st.expander("🎙️ AI Quick Voice / Text Entry (Click to expand)"):
-    ai_text = st.text_area("Type or dictate with your phone's microphone:", height=70, 
-                           placeholder="e.g. Sold 10 Provita to Shoalal medical on credit 1500. Collected 500 from Alex medical. Spent 50 on Nasta.")
-    if st.button("➕ Parse and Insert Rows"):
-        if ai_text.strip():
-            with st.spinner("AI parsing..."):
-                try:
-                    res = parse_field_entry_with_ai(ai_text)
-                    if "records" in res and res["records"]:
-                        st.session_state.records.extend(res["records"])
-                    if "expenses" in res and res["expenses"]:
-                        st.session_state.expenses.extend(res["expenses"])
-                    st.success("Entries added to the table below!")
-                except Exception as ex:
-                    st.error(f"Error parsing entry: {ex}")
+# ---------- Helpers ----------
+def money(value):
+    try:
+        return f"Rs. {float(value):,.2f}"
+    except (ValueError, TypeError):
+        return "Rs. 0.00"
 
-# 2. Interactive Excel-Style Entry Grids
-st.subheader("1. Sales & Cash Collection Ledger")
-st.caption("You can click, type, edit rows, or add new rows directly in this grid like Excel.")
+def blank_sales():
+    return pd.DataFrame([{
+        "Client / Party Name": "",
+        "Goods / Product Name": "",
+        "Qty Sold": 0.0,
+        "FOC Qty": 0.0,
+        "Sale Rate (Rs.)": 0.0,
+        "Cash Collected (Rs.)": 0.0,
+        "Credit Given (Rs.)": 0.0,
+        "Client Address": "",
+        "Invoice / Ref. No.": "",
+        "Remarks": "",
+    }])
 
-records_df = pd.DataFrame(st.session_state.records)
-edited_records_df = st.data_editor(
-    records_df, 
-    num_rows="dynamic", 
-    use_container_width=True,
-    column_config={
-        "QTY": st.column_config.NumberColumn("QTY", min_value=0, step=1),
-        "Party Name": st.column_config.TextColumn("Party Name", required=True),
-        "Particulars": st.column_config.TextColumn("Particulars (Product / Dues)"),
-        "Free (FOC)": st.column_config.NumberColumn("Free (FOC)", min_value=0, step=1),
-        "Cash Collected": st.column_config.NumberColumn("Cash Collected (Rs.)", format="%.2f"),
-        "Credit Sales": st.column_config.NumberColumn("Credit Sales / Debit (Rs.)", format="%.2f"),
-        "Sales Rate": st.column_config.NumberColumn("Sales Rate", format="%.2f"),
-        "Buyer Address": st.column_config.TextColumn("Buyer Address"),
-    }
-)
+def blank_expenses():
+    return pd.DataFrame([{
+        "Expense Category": "Fuel / Travel",
+        "Description / Purpose": "",
+        "Staff Name (if advance)": "",
+        "Amount (Rs.)": 0.0,
+    }])
 
-# Keep session state updated with table edits
-st.session_state.records = edited_records_df.to_dict('records')
+def blank_ledger():
+    return pd.DataFrame([{
+        "Date": date.today(),
+        "Client / Party Name": "",
+        "Goods / Reference": "",
+        "Invoice No.": "",
+        "Sale / Debit (Rs.)": 0.0,
+        "Payment Received (Rs.)": 0.0,
+        "Adjustment / Return (Rs.)": 0.0,
+        "Client Address": "",
+        "Remarks": "",
+    }])
 
-st.subheader("2. Field Expenses & Remittances")
-expenses_df = pd.DataFrame(st.session_state.expenses)
-edited_expenses_df = st.data_editor(
-    expenses_df,
+def to_csv_bytes(df):
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+if "sales_data" not in st.session_state:
+    st.session_state.sales_data = blank_sales()
+if "expense_data" not in st.session_state:
+    st.session_state.expense_data = blank_expenses()
+if "ledger_data" not in st.session_state:
+    st.session_state.ledger_data = blank_ledger()
+
+# ---------- Report header ----------
+with st.container(border=True):
+    c1, c2, c3, c4 = st.columns([1, 1.25, 1.25, 1])
+    with c1:
+        report_date = st.date_input("Report date", value=date.today())
+    with c2:
+        staff_name = st.text_input("MR / Staff name")
+    with c3:
+        route_area = st.text_input("Route / Area", placeholder="e.g. Birgunj to Lautan")
+    with c4:
+        report_no = st.text_input("Report number")
+
+# ---------- Sales entry ----------
+st.subheader("1. Sales details")
+st.caption("Enter one row for each product supplied. Total sale is calculated automatically as quantity sold × sale rate. FOC quantity is tracked separately.")
+sales = st.data_editor(
+    st.session_state.sales_data,
     num_rows="dynamic",
     use_container_width=True,
+    hide_index=True,
+    key="sales_editor",
     column_config={
-        "Category": st.column_config.SelectboxColumn("Expense Category", options=["Nasta (Food)", "Fuel", "Staff Advance", "eSewa Deposit", "Office Nasta", "Maintenance", "Extra"]),
-        "Particulars": st.column_config.TextColumn("Details / Remarks"),
-        "Amount": st.column_config.NumberColumn("Amount (Rs.)", min_value=0.0, format="%.2f")
-    }
+        "Client / Party Name": st.column_config.TextColumn(required=False),
+        "Goods / Product Name": st.column_config.TextColumn(required=False),
+        "Qty Sold": st.column_config.NumberColumn(min_value=0, step=1, format="%.2f"),
+        "FOC Qty": st.column_config.NumberColumn(min_value=0, step=1, format="%.2f"),
+        "Sale Rate (Rs.)": st.column_config.NumberColumn(min_value=0, step=1, format="%.2f"),
+        "Cash Collected (Rs.)": st.column_config.NumberColumn(min_value=0, step=1, format="%.2f"),
+        "Credit Given (Rs.)": st.column_config.NumberColumn(min_value=0, step=1, format="%.2f"),
+    },
 )
-st.session_state.expenses = edited_expenses_df.to_dict('records')
+sales = sales.copy()
+for col in ["Qty Sold", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"]:
+    sales[col] = pd.to_numeric(sales[col], errors="coerce").fillna(0)
+sales["Total Sale (Rs.)"] = sales["Qty Sold"] * sales["Sale Rate (Rs.)"]
+st.session_state.sales_data = sales.drop(columns=["Total Sale (Rs.)"], errors="ignore")
 
-st.divider()
+total_sales = float(sales["Total Sale (Rs.)"].sum())
+total_cash = float(sales["Cash Collected (Rs.)"].sum())
+total_credit = float(sales["Credit Given (Rs.)"].sum())
+total_foc = float(sales["FOC Qty"].sum())
+sales_view = sales.copy()
+sales_view.insert(0, "S.N.", range(1, len(sales_view) + 1))
+st.dataframe(
+    sales_view[["S.N.", "Client / Party Name", "Goods / Product Name", "Qty Sold", "FOC Qty",
+                "Sale Rate (Rs.)", "Total Sale (Rs.)", "Cash Collected (Rs.)",
+                "Credit Given (Rs.)", "Client Address", "Invoice / Ref. No.", "Remarks"]],
+    use_container_width=True, hide_index=True
+)
 
-# ----------------- REAL-TIME TOTALS & RECONCILIATION -----------------
-total_qty = edited_records_df["QTY"].sum() if not edited_records_df.empty and "QTY" in edited_records_df else 0
-total_foc = edited_records_df["Free (FOC)"].sum() if not edited_records_df.empty and "Free (FOC)" in edited_records_df else 0
-total_cash_collected = edited_records_df["Cash Collected"].sum() if not edited_records_df.empty and "Cash Collected" in edited_records_df else 0.0
-total_credit_sales = edited_records_df["Credit Sales"].sum() if not edited_records_df.empty and "Credit Sales" in edited_records_df else 0.0
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Total sales", money(total_sales))
+m2.metric("Cash collected", money(total_cash))
+m3.metric("Credit given", money(total_credit))
+m4.metric("FOC quantity", f"{total_foc:,.2f}")
 
-total_expenses = edited_expenses_df["Amount"].sum() if not edited_expenses_df.empty and "Amount" in edited_expenses_df else 0.0
-net_cash_in_hand = total_cash_collected - total_expenses
+# ---------- Expenses and cash closing ----------
+st.subheader("2. Expenses, staff advances & cash closing")
+expense_categories = [
+    "Fuel / Travel", "Staff Advance", "Loading / Unloading", "Maintenance",
+    "Food / Refreshment", "Phone / Internet", "Office Expense", "Other"
+]
+expenses = st.data_editor(
+    st.session_state.expense_data,
+    num_rows="dynamic",
+    use_container_width=True,
+    hide_index=True,
+    key="expenses_editor",
+    column_config={
+        "Expense Category": st.column_config.SelectboxColumn(options=expense_categories, required=True),
+        "Description / Purpose": st.column_config.TextColumn(),
+        "Staff Name (if advance)": st.column_config.TextColumn(),
+        "Amount (Rs.)": st.column_config.NumberColumn(min_value=0, step=100, format="%.2f"),
+    },
+)
+expenses = expenses.copy()
+expenses["Amount (Rs.)"] = pd.to_numeric(expenses["Amount (Rs.)"], errors="coerce").fillna(0)
+st.session_state.expense_data = expenses
+total_expenses = float(expenses["Amount (Rs.)"].sum())
+net_cash = total_cash - total_expenses
 
-st.subheader("3. Daily Financial Summary")
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Total QTY Sold", f"{int(total_qty)}")
-m2.metric("Total FOC Given", f"{int(total_foc)}")
-m3.metric("Total Credit (Debit)", f"Rs. {total_credit_sales:,.2f}")
-m4.metric("Gross Cash Collected", f"Rs. {total_cash_collected:,.2f}")
-m5.metric("Net Cash in Hand", f"Rs. {net_cash_in_hand:,.2f}", delta=f"Less Rs. {total_expenses:,.2f} exp")
+e1, e2, e3 = st.columns(3)
+e1.metric("Total expenses / advances", money(total_expenses))
+e2.metric("Net cash remaining", money(net_cash))
+e3.metric("Sales reconciliation difference", money(total_sales - total_cash - total_credit))
 
-st.divider()
+st.caption("Reconciliation assumes the cash and credit fields refer to the same day's sales. Collections against old dues should be recorded separately in the client ledger.")
 
-# ----------------- 4. FINAL SUBMIT SECTION -----------------
-st.subheader("4. Final Verification & Submission")
-st.write(f"Clicking final submit will lock reference **{st.session_state.reference_no}** and send the report to **{report_email}**.")
+# ---------- Client ledger ----------
+st.subheader("3. Client ledger & outstanding balance")
+st.caption("Use one row per invoice, payment or adjustment. A sale is a debit; later receipts reduce the balance. Keep client names spelled consistently.")
+ledger = st.data_editor(
+    st.session_state.ledger_data,
+    num_rows="dynamic",
+    use_container_width=True,
+    hide_index=True,
+    key="ledger_editor",
+    column_config={
+        "Date": st.column_config.DateColumn(format="DD-MMM-YYYY"),
+        "Client / Party Name": st.column_config.TextColumn(required=False),
+        "Sale / Debit (Rs.)": st.column_config.NumberColumn(min_value=0, step=100, format="%.2f"),
+        "Payment Received (Rs.)": st.column_config.NumberColumn(min_value=0, step=100, format="%.2f"),
+        "Adjustment / Return (Rs.)": st.column_config.NumberColumn(min_value=0, step=100, format="%.2f"),
+    },
+)
+ledger = ledger.copy()
+for col in ["Sale / Debit (Rs.)", "Payment Received (Rs.)", "Adjustment / Return (Rs.)"]:
+    ledger[col] = pd.to_numeric(ledger[col], errors="coerce").fillna(0)
+ledger["Date"] = pd.to_datetime(ledger["Date"], errors="coerce")
+ledger["Net Movement (Rs.)"] = ledger["Sale / Debit (Rs.)"] - ledger["Payment Received (Rs.)"] - ledger["Adjustment / Return (Rs.)"]
+ledger["Client Outstanding (Rs.)"] = ledger.groupby("Client / Party Name", dropna=False)["Net Movement (Rs.)"].cumsum()
+st.session_state.ledger_data = ledger.drop(columns=["Net Movement (Rs.)", "Client Outstanding (Rs.)"], errors="ignore")
 
-col_sub1, col_sub2 = st.columns([2, 1])
+ledger_view = ledger.copy()
+ledger_view["Date"] = ledger_view["Date"].dt.strftime("%d-%b-%Y")
+st.dataframe(ledger_view, use_container_width=True, hide_index=True)
 
-with col_sub1:
-    if st.button("🚀 Final Submit & Email Report", type="primary", use_container_width=True):
-        email_subject = f"[{st.session_state.reference_no}] Daily Report - {mr_name} - Miti: {miti_bs}"
-        
-        # HTML formatting matches company letterhead
-        html_report = f"""
-        <div style="font-family: Arial, sans-serif; font-size: 13px; color: #222;">
-            <div style="text-align: center; border-bottom: 2px solid #1b5e20; padding-bottom: 8px;">
-                <h2 style="color: #1b5e20; margin: 0;">ALPINE HERBS PVT. LTD.</h2>
-                <p style="margin: 2px; color: #555;">Birgunj, Nepal | Daily Field Report</p>
-            </div>
-
-            <table style="width: 100%; border-collapse: collapse; margin-top: 15px; background-color: #f9f9f9;">
-                <tr>
-                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>Ref Code:</strong> {st.session_state.reference_no}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>Date (Miti B.S.):</strong> {miti_bs}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>Date (A.D.):</strong> {date_ad}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>MR Name:</strong> {mr_name}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>Address:</strong> {mr_address}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>Location:</strong> {tour_route}</td>
-                </tr>
-                <tr>
-                    <td colspan="3" style="padding: 6px; border: 1px solid #ddd;"><strong>Verified By:</strong> {verifier_name}</td>
-                </tr>
-            </table>
-
-            <h3 style="color: #1b5e20; margin-top: 20px;">Financial Ledger Reconciliation</h3>
-            <table style="width: 60%; border-collapse: collapse; margin-bottom: 15px;">
-                <tr style="background-color: #f2f2f2;">
-                    <td style="padding: 6px; border: 1px solid #ddd;">Total Credit Sales (Debit to Parties)</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: right;"><strong>Rs. {total_credit_sales:,.2f}</strong></td>
-                </tr>
-                <tr>
-                    <td style="padding: 6px; border: 1px solid #ddd;">Total Cash Collected</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: green;"><strong>Rs. {total_cash_collected:,.2f}</strong></td>
-                </tr>
-                <tr>
-                    <td style="padding: 6px; border: 1px solid #ddd;">Less: Field Expenses & Remittances</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: right; color: red;">- Rs. {total_expenses:,.2f}</td>
-                </tr>
-                <tr style="background-color: #d4edda;">
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>CLOSING CASH TO DEPOSIT / HANDOVER</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd; text-align: right;"><strong>Rs. {net_cash_in_hand:,.2f}</strong></td>
-                </tr>
-            </table>
-
-            <h4>1. Sales & Cash Collection Breakdown</h4>
-            {edited_records_df.to_html(index=False)}
-
-            <h4>2. Field Expenses (Nasta, Fuel, Advance, eSewa)</h4>
-            {edited_expenses_df.to_html(index=False)}
-
-            <br/>
-            <p style="font-size: 11px; color: #888;">Generated automatically via Alpine Herbs Field AI Agent. Unique System Tag: {st.session_state.reference_no}</p>
-        </div>
-        """
-        
-        with st.spinner("Submitting final report and sending email..."):
-            success, msg = send_eod_email(email_subject, html_report)
-            if success:
-                st.balloons()
-                st.success(f"Report `{st.session_state.reference_no}` verified and sent to {report_email}!")
-            else:
-                st.error(f"Failed to send email: {msg}")
-
-with col_sub2:
-    # Download as CSV directly
-    csv_export = edited_records_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download CSV Ledger",
-        data=csv_export,
-        file_name=f"Daily_Report_{miti_bs}_{mr_name}.csv",
-        mime='text/csv',
-        use_container_width=True
+valid_ledger = ledger[ledger["Client / Party Name"].fillna("").astype(str).str.strip() != ""]
+if not valid_ledger.empty:
+    client_summary = (
+        valid_ledger.groupby("Client / Party Name", as_index=False)
+        .agg(
+            Total_Sales=("Sale / Debit (Rs.)", "sum"),
+            Payments=("Payment Received (Rs.)", "sum"),
+            Adjustments=("Adjustment / Return (Rs.)", "sum"),
+        )
     )
+    client_summary["Outstanding (Rs.)"] = client_summary["Total_Sales"] - client_summary["Payments"] - client_summary["Adjustments"]
+    st.markdown("*Outstanding by client*")
+    st.dataframe(client_summary.rename(columns={
+        "Total_Sales": "Ledger sales (Rs.)",
+        "Payments": "Payments received (Rs.)",
+        "Adjustments": "Adjustments / returns (Rs.)",
+    }), use_container_width=True, hide_index=True)
+
+# ---------- Export ----------
+st.subheader("4. Export today's report")
+header_df = pd.DataFrame([{
+    "Report Date": report_date.isoformat(),
+    "MR / Staff Name": staff_name,
+    "Route / Area": route_area,
+    "Report No.": report_no,
+    "Total Sales (Rs.)": total_sales,
+    "Total Cash Collected (Rs.)": total_cash,
+    "Total Credit Given (Rs.)": total_credit,
+    "Total FOC Qty": total_foc,
+    "Total Expenses / Advances (Rs.)": total_expenses,
+    "Net Cash Remaining (Rs.)": net_cash,
+}])
+
+def make_excel():
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        header_df.to_excel(writer, sheet_name="Daily Summary", index=False)
+        sales_view.to_excel(writer, sheet_name="Sales Details", index=False)
+        expenses.to_excel(writer, sheet_name="Expenses", index=False)
+        ledger_view.to_excel(writer, sheet_name="Client Ledger", index=False)
+        if not valid_ledger.empty:
+            client_summary.to_excel(writer, sheet_name="Outstanding by Client", index=False)
+    return output.getvalue()
+
+x1, x2 = st.columns(2)
+with x1:
+    st.download_button(
+        "Download full report (Excel)",
+        data=make_excel(),
+        file_name=f"WENS_Daily_Report_{report_date.isoformat()}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+with x2:
+    st.download_button(
+        "Download sales data (CSV)",
+        data=to_csv_bytes(sales_view),
+        file_name=f"WENS_Sales_{report_date.isoformat()}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+st.markdown("---")
+st.markdown(
+    '<p class="small-note">Template note: this is a single-page Streamlit app. Data is held in the current Streamlit session; add a database (for example SQLite or PostgreSQL) before using it as a permanent multi-user accounting system. VAT, old-due collections, returns, and staff-advance settlement should follow your accountant’s approved process.</p>',
+    unsafe_allow_html=True,
+)
