@@ -25,7 +25,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Permanent company recipient (Completely hidden from UI)
 PERMANENT_COMPANY_EMAIL = "Alpineherbsinfo@gmail.com"
 REQUIRED_APP_PASSCODE = str(st.secrets.get("app_passcode", "12345678"))
 
@@ -102,7 +101,6 @@ div.stButton > button[kind="primary"]:hover {
 </style>
 """, unsafe_allow_html=True)
 
-# App Banner
 st.markdown("""
 <div class="brand-header">
     <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -112,7 +110,7 @@ st.markdown("""
         </div>
         <div style="text-align: right; font-size: 0.8rem; color: #E0EFE5; line-height: 1.4;">
             <div><strong>ISO GMP Standard</strong></div>
-            <div>Field Operations Portal</div>
+            <div>Field Operations Portal (Repository A)</div>
         </div>
     </div>
 </div>
@@ -241,11 +239,11 @@ with c4:
 st.divider()
 
 # =========================================================
-# 1. SALES ENTRIES (AUTO CALCULATES CREDIT = TOTAL - CASH)
+# 1. SALES ENTRIES
 # =========================================================
 
 st.subheader("1. Sales & Cash Collections Grid")
-st.caption("Credit Given automatically calculates as (Qty × Rate) - Cash Collected. Values stay continuous upon pressing Enter or Tab.")
+st.caption("Credit Given automatically calculates as (Qty × Rate) - Cash Collected.")
 
 sales_column_config = {
     "Client / Party Name": st.column_config.TextColumn("Client / Party Name"),
@@ -254,7 +252,7 @@ sales_column_config = {
     "FOC Qty": st.column_config.NumberColumn("FOC (Bonus)", min_value=0.0, step=1.0),
     "Sale Rate (Rs.)": st.column_config.NumberColumn("Sale Rate (Rs.)", min_value=0.0, format="%.2f"),
     "Cash Collected (Rs.)": st.column_config.NumberColumn("Cash Collected (Rs.)", min_value=0.0, format="%.2f"),
-    "Credit Given (Rs.)": st.column_config.NumberColumn("Credit Given (Auto / Manual)", min_value=0.0, format="%.2f"),
+    "Credit Given (Rs.)": st.column_config.NumberColumn("Credit Given (Auto)", min_value=0.0, format="%.2f"),
     "Client Address": st.column_config.TextColumn("Client Address"),
     "Invoice No.": st.column_config.TextColumn("Invoice / Bill No.")
 }
@@ -272,7 +270,6 @@ raw_sales = st.data_editor(
 
 sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
 
-# Automatic Credit calculation: Total Bill - Cash
 computed_bill = sales["Qty"] * sales["Sale Rate (Rs.)"]
 auto_calculated_credit = (computed_bill - sales["Cash Collected (Rs.)"]).clip(lower=0.0)
 
@@ -285,7 +282,6 @@ total_credit = float(sales["Credit Given (Rs.)"].sum())
 total_foc = float(sales["FOC Qty"].sum())
 total_qty = float(sales["Qty"].sum())
 
-# Metrics Strip
 m1, m2, m3, m4, m5 = st.columns(5)
 m1.metric("Total Billed Sales", money(total_sales))
 m2.metric("Gross Cash Collected", money(total_cash))
@@ -352,14 +348,13 @@ sales_variance = total_sales - (total_cash + total_credit)
 st.divider()
 
 # =========================================================
-# 4. AUTO-POPULATING CLIENT LEDGER & PRODUCT SUMMARY
+# 4. CLIENT LEDGER & PRODUCT SUMMARY
 # =========================================================
 
 st.subheader("4. Client Ledger & Product Sales Summary")
 
 valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
 
-# Auto-generate client ledger from Section 1
 if not valid_sales.empty:
     ledger_summary = valid_sales.groupby("Client / Party Name").agg(
         New_Credit=("Credit Given (Rs.)", "sum"),
@@ -389,9 +384,7 @@ else:
         "Current Due (Rs.)": 0.0
     }])
 
-st.markdown("##### 👤 Client Ledger (Auto-Synced from Sales)")
-st.caption("Clients, New Credit, and Payments are automatically pulled from Section 1 above. Edit Previous Due below if needed:")
-
+st.markdown("##### 👤 Client Ledger (Auto-Synced)")
 edited_ledger = st.data_editor(
     ledger_df,
     hide_index=True,
@@ -413,11 +406,8 @@ for _, r in edited_ledger.iterrows():
 
 ledger_outstanding = float(edited_ledger["Current Due (Rs.)"].sum())
 
-# ----------------- PRODUCT SALES SUMMARY -----------------
 st.write("")
 st.markdown("##### 📦 Total Products Sold Summary")
-st.caption("Automated summary specifying each product, total billed quantity, bonus/FOC quantity, and sales amount:")
-
 valid_products = sales[sales["Goods / Product Name"].astype(str).str.strip() != ""]
 
 if not valid_products.empty:
@@ -462,17 +452,17 @@ s2.metric("Credit Given (Debit to Clients)", money(total_credit))
 s3.metric("Gross Cash Collected", money(total_cash))
 
 s4, s5, s6 = st.columns(3)
-s4.metric("Operating Expenses (Nasta/Fuel)", money(office_total))
+s4.metric("Operating Expenses", money(office_total))
 s5.metric("Staff Advances", money(staff_total))
 s6.metric("Total Deductions", money(total_expenses))
 
 s7, s8, s9 = st.columns(3)
 s7.metric("NET CLOSING CASH IN HAND", money(net_cash), delta=f"Collected {money(total_cash)}")
-s8.metric("Sales Variance", money(sales_variance), help="Total Sale minus (Cash + Credit)")
+s8.metric("Sales Variance", money(sales_variance))
 s9.metric("Total Client Dues Outstanding", money(ledger_outstanding))
 
 # =========================================================
-# REPORTLAB PDF GENERATOR (A4 LANDSCAPE)
+# REPORTLAB PDF GENERATOR
 # =========================================================
 
 def pdf_table(data, widths, font_size=7):
@@ -549,7 +539,6 @@ def create_pdf():
     ]))
     story.append(meta_table)
 
-    # 1. SALES ENTRIES
     story.append(Paragraph("1. SALES ENTRIES & RECOVERIES", sec_style))
     sales_header = ["S.N.", "Client / Party Name", "Goods / Product Name", "Qty", "FOC", "Rate", "Total Sale", "Cash", "Credit", "Address", "Invoice"]
     sales_rows = [sales_header]
@@ -578,7 +567,6 @@ def create_pdf():
         6.5
     ))
 
-    # 2. PRODUCT SALES SUMMARY
     story.append(Spacer(1, 2))
     story.append(Paragraph("2. PRODUCT SALES SUMMARY", sec_style))
     prod_pdf_rows = [["Product / Item Name", "Total Billed Qty", "Total Free (FOC) Qty", "Total Sales Value (Rs.)"]]
@@ -596,7 +584,6 @@ def create_pdf():
 
     story.append(pdf_table(prod_pdf_rows, [110*mm, 45*mm, 45*mm, 77*mm], 6.5))
 
-    # 3. EXPENSES & STAFF ADVANCES
     story.append(Spacer(1, 2))
     story.append(Paragraph("3. EXPENSES & STAFF ADVANCES", sec_style))
 
@@ -628,7 +615,6 @@ def create_pdf():
     ]))
     story.append(side_table)
 
-    # 4. SUMMARY
     story.append(Spacer(1, 4))
     story.append(Paragraph("4. CLOSING FINANCIAL RECONCILIATION", sec_style))
     sum_data = [
@@ -640,7 +626,6 @@ def create_pdf():
     t_sum = pdf_table(sum_data, [50*mm, 45*mm, 50*mm, 45*mm], 7.5)
     story.append(t_sum)
 
-    # Signatures
     story.append(Spacer(1, 10))
     sig_data = [
         [
@@ -660,11 +645,10 @@ def create_pdf():
     return buffer.getvalue()
 
 # =========================================================
-# EMAIL DISPATCH HELPER (SENDS TO PERMANENT EMAIL)
+# EMAIL DISPATCH HELPER
 # =========================================================
 
 def try_send_email(pdf_bytes, sender, password):
-    """Attempts background email dispatch. Returns (success_bool, message)."""
     report_ref = st.session_state.get("report_no", "ALP-REPORT")
     staff_disp = staff_name.strip() if staff_name else "MR"
     route_disp = route.strip() if route else "—"
@@ -696,10 +680,8 @@ def try_send_email(pdf_bytes, sender, password):
     )
 
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
-
     context = ssl.create_default_context()
 
-    # Protocol 1: Port 587
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
         server.ehlo()
@@ -710,7 +692,6 @@ def try_send_email(pdf_bytes, sender, password):
         server.quit()
         return True, "Emailed successfully to Head Office!"
     except Exception:
-        # Protocol 2: Fallback to Port 465 SSL
         try:
             server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=15)
             server.login(clean_sender, clean_password)
@@ -721,14 +702,13 @@ def try_send_email(pdf_bytes, sender, password):
             return False, f"Cloud SMTP socket blocked by host: {e}"
 
 # =========================================================
-# SIDEBAR: HIDDEN CREDENTIALS & MANUAL DOWNLOAD BUTTON
+# SIDEBAR
 # =========================================================
 
 with st.sidebar:
     st.header("⚙️ Controls & Settings")
     st.info(f"**Report ID:** `{st.session_state.get('report_no', 'ALP')}`")
 
-    # HIDDEN SENDER CREDENTIALS ACCORDION (WITH ARROW)
     with st.expander("▶ ✉️ Email Sender Credentials", expanded=False):
         st.caption("Your details are hidden here. Click to view or update:")
         user_email = st.text_input("Sender Gmail:", placeholder="example@gmail.com")
@@ -736,7 +716,6 @@ with st.sidebar:
 
     st.divider()
 
-    # ACTION BUTTONS SIDE-BY-SIDE
     col_sb1, col_sb2 = st.columns(2)
     with col_sb1:
         if st.button("🔄 Clear Form", use_container_width=True):
@@ -744,7 +723,6 @@ with st.sidebar:
             st.rerun()
 
     with col_sb2:
-        # Instant Manual Download button for Internal Report
         st.download_button(
             "📥 Internal Report (PDF)",
             data=create_pdf(),
@@ -755,7 +733,7 @@ with st.sidebar:
         )
 
 # =========================================================
-# 6. SUBMISSION & EXPORT (FAIL-SAFE WORKFLOW)
+# 6. SUBMISSION & EXPORT
 # =========================================================
 
 st.subheader("6. Verification & Submission")
@@ -782,12 +760,10 @@ with c_sub1:
                 pdf_bytes = create_pdf()
                 current_locked_ref = st.session_state.get('report_no', 'ALP')
                 
-                # Store PDF in session state so it is guaranteed safe and ready
                 st.session_state["submitted_pdf"] = pdf_bytes
                 st.session_state["submitted_filename"] = f"ALPINE_HERBS_{current_locked_ref}.pdf"
                 st.session_state["last_submitted_ref"] = current_locked_ref
 
-                # Try sending email in background
                 email_sent, email_msg = False, ""
                 if user_email and user_password:
                     email_sent, email_msg = try_send_email(pdf_bytes, user_email, user_password)
@@ -798,15 +774,13 @@ with c_sub1:
                     st.success(f"✅ Report `{current_locked_ref}` submitted and successfully emailed to Head Office!")
                 else:
                     st.success(f"✅ Report `{current_locked_ref}` officially finalized and generated!")
-                    st.info("ℹ️ Cloud mail port was restricted by the host. Download your official PDF below or from the sidebar for Head Office.")
+                    st.info("ℹ️ Cloud mail port was restricted by the host. Download your official PDF below or from the sidebar.")
 
-                # Cleanly reset the form for the next day's entry
                 reset_form_to_blank()
 
 with c_sub2:
     st.write("")
     st.write("")
-    # Display download button if a report was submitted, or download current live PDF
     if "submitted_pdf" in st.session_state:
         st.download_button(
             "⬇️ DOWNLOAD FINAL SUBMITTED PDF",
@@ -817,5 +791,4 @@ with c_sub2:
         )
 
 st.markdown("---")
-# STRICTLY LABELED AS REQUESTED
-st.caption("🌿 ALPINE HERBS PVT. LTD. | Daily Report System.")
+st.caption("🌿 ALPINE HERBS PVT. LTD. | Daily Report System (Repository A).")
