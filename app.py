@@ -1,6 +1,6 @@
 import requests
 
-WEB_APP_URL = "YOUR_COPIED_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzx1NbU3AY8f4n4MezUYq2AHraFVPpm9wAyV8RFLHI0gmiyOo1q6t181r51JL2_WmYD/exec"
 
 def push_sales_to_google_sheet(sales_df, staff_name_val, report_ref, date_val):
     success_count = 0
