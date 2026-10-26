@@ -14,31 +14,38 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 # =========================================================
 # GOOGLE APPS SCRIPT WEB APP LINK FOR SHEET SYNC
 # =========================================================
-WEB_APP_URL = "https://script.google.com/macros/s/https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
 def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
-    if "YOUR_ACTUAL_DEPLOYED_URL" in WEB_APP_URL or not WEB_APP_URL.startswith("http"):
+    if "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec" in WEB_APP_URL or not WEB_APP_URL.startswith("http"):
         return 0
 
     synced_count = 0
 
     # 1. Sync Sales Entries to 'Sales' Tab
     for _, row in sales_df.iterrows():
-        c_name = str(row.get("Client / Party Name", "")).strip()
-        if c_name and c_name != "nan":
+        c_name = str(row.get("Client / Party Name", "Walk-in Party")).strip()
+        p_name = str(row.get("Goods / Product Name", "")).strip()
+        qty_val = float(row.get("Qty", 0))
+        rate_val = float(row.get("Sale Rate (Rs.)", 0))
+        cash_val = float(row.get("Cash Collected (Rs.)", 0))
+        credit_val = float(row.get("Credit Given (Rs.)", 0))
+        total_val = float(row.get("Total Sale (Rs.)", 0))
+
+        if qty_val > 0 or cash_val > 0 or credit_val > 0 or total_val > 0 or (p_name and p_name != "nan"):
             payload = {
                 "target": "sales",
                 "date": str(date_val),
-                "invoice": str(row.get("Invoice No.", "")),
-                "client_name": c_name,
-                "address": str(row.get("Client Address", "")),
-                "product_name": str(row.get("Goods / Product Name", "")),
-                "qty": float(row.get("Qty", 0)),
-                "rate": float(row.get("Sale Rate (Rs.)", 0)),
-                "cash_collected": float(row.get("Cash Collected (Rs.)", 0)),
-                "credit_given": float(row.get("Credit Given (Rs.)", 0)),
-                "total_sale": float(row.get("Total Sale (Rs.)", 0)),
-                "staff_name": str(staff_name_val),
+                "invoice": str(row.get("Invoice No.", "AUTO-INV")),
+                "client_name": c_name if c_name and c_name != "nan" else "Walk-in Party",
+                "address": str(row.get("Client Address", "Birgunj")),
+                "product_name": p_name if p_name else "General Stock",
+                "qty": qty_val,
+                "rate": rate_val,
+                "cash_collected": cash_val,
+                "credit_given": credit_val,
+                "total_sale": total_val if total_val > 0 else (qty_val * rate_val),
+                "staff_name": str(staff_name_val if staff_name_val else "Pritam"),
                 "report_no": str(report_ref)
             }
             try:
@@ -57,10 +64,10 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
                 "target": "expenses",
                 "date": str(date_val),
                 "details": details,
-                "paid_to": str(row.get("Paid To / Vendor", "")),
+                "paid_to": str(row.get("Paid To / Vendor", "Vendor")),
                 "mode": str(row.get("Payment Mode", "Cash")),
                 "amount": amt,
-                "staff_name": str(staff_name_val),
+                "staff_name": str(staff_name_val if staff_name_val else "Pritam"),
                 "report_no": str(report_ref)
             }
             try:
@@ -79,10 +86,10 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
                 "target": "advances",
                 "date": str(date_val),
                 "personnel_name": p_name,
-                "purpose": str(row.get("Purpose / Details", "")),
+                "purpose": str(row.get("Purpose / Details", "Advance")),
                 "type": str(row.get("Payment Type", "Staff Advance")),
                 "amount": amt,
-                "staff_name": str(staff_name_val),
+                "staff_name": str(staff_name_val if staff_name_val else "Pritam"),
                 "report_no": str(report_ref)
             }
             try:
@@ -235,7 +242,11 @@ else:
         total_expenses = office_total + staff_total
         net_cash = total_cash - total_expenses
 
-        valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
+        valid_sales = sales[
+            (sales["Client / Party Name"].astype(str).str.strip() != "") | 
+            (sales["Goods / Product Name"].astype(str).str.strip() != "") |
+            (sales["Qty"] > 0)
+        ]
 
         st.divider()
         st.markdown("##### 📊 Financial Closing Summary")
