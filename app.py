@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 from io import BytesIO
-from email.message import EmailMessage
-import smtplib
-import ssl
 import uuid
 
 from reportlab.lib import colors
@@ -16,7 +13,7 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # =========================================================
-# PAGE CONFIGURATION & PERMANENT COMPANY EMAIL
+# PAGE CONFIGURATION & AUTHENTICATION GATE
 # =========================================================
 
 st.set_page_config(
@@ -25,8 +22,32 @@ st.set_page_config(
     layout="wide"
 )
 
-PERMANENT_COMPANY_EMAIL = "Alpineherbsinfo@gmail.com"
-REQUIRED_APP_PASSCODE = str(st.secrets.get("app_passcode", "12345678"))
+# Authentication State Management
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.markdown("""
+    <div style="max-width: 400px; margin: 80px auto; padding: 30px; background: #EAF2EC; border-radius: 12px; border: 1px solid #C8DCCF; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center;">
+        <h2 style="color: #164E33; margin-bottom: 5px;">🌿 ALPINE HERBS</h2>
+        <p style="color: #444; font-size: 0.85rem; margin-bottom: 20px;">Field Operations Portal (Repository A)</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_login1, col_login2, col_login3 = st.columns([1, 1.5, 1])
+    with col_login2:
+        st.subheader("🔐 System Login")
+        login_user = st.text_input("Username", placeholder="Enter username")
+        login_pass = st.text_input("Password", type="password", placeholder="Enter password")
+        
+        st.write("")
+        if st.button("Login to Portal", type="primary", use_container_width=True):
+            if login_user.strip() == "Alpine" and login_pass.strip() == "AHP@123":
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("❌ Invalid username or password.")
+    st.stop()
 
 # =========================================================
 # BRAND STYLING
@@ -645,63 +666,6 @@ def create_pdf():
     return buffer.getvalue()
 
 # =========================================================
-# EMAIL DISPATCH HELPER
-# =========================================================
-
-def try_send_email(pdf_bytes, sender, password):
-    report_ref = st.session_state.get("report_no", "ALP-REPORT")
-    staff_disp = staff_name.strip() if staff_name else "MR"
-    route_disp = route.strip() if route else "—"
-
-    clean_sender = sender.strip()
-    clean_password = password.strip().replace(" ", "")
-
-    if not clean_sender or not clean_password:
-        return False, "Sender email and password not provided."
-
-    msg = EmailMessage()
-    filename = f"ALPINE_HERBS_Report_{report_ref}_{selected_date}.pdf"
-    msg["Subject"] = f"[{report_ref}] Alpine Herbs Daily Report - {staff_disp} ({nepali_date(selected_date)})"
-    msg["From"] = clean_sender
-    msg["To"] = PERMANENT_COMPANY_EMAIL
-
-    msg.set_content(
-        f"Dear Management,\n\n"
-        f"Attached is the daily field report for Alpine Herbs Pvt. Ltd.\n\n"
-        f"Reference Code: {report_ref}\n"
-        f"Date: {selected_date} ({nepali_date(selected_date)})\n"
-        f"MR Name: {staff_disp}\n"
-        f"Route: {route_disp}\n"
-        f"Gross Cash Collected: {money(total_cash)}\n"
-        f"Credit Given: {money(total_credit)}\n"
-        f"Total Deductions: {money(total_expenses)}\n"
-        f"Net Closing Cash to Deposit: {money(net_cash)}\n\n"
-        f"Regards,\nField Operations System"
-    )
-
-    msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=filename)
-    context = ssl.create_default_context()
-
-    try:
-        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-        server.ehlo()
-        server.starttls(context=context)
-        server.ehlo()
-        server.login(clean_sender, clean_password)
-        server.send_message(msg)
-        server.quit()
-        return True, "Emailed successfully to Head Office!"
-    except Exception:
-        try:
-            server = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=15)
-            server.login(clean_sender, clean_password)
-            server.send_message(msg)
-            server.quit()
-            return True, "Emailed successfully to Head Office!"
-        except Exception as e:
-            return False, f"Cloud SMTP socket blocked by host: {e}"
-
-# =========================================================
 # SIDEBAR
 # =========================================================
 
@@ -709,10 +673,9 @@ with st.sidebar:
     st.header("⚙️ Controls & Settings")
     st.info(f"**Report ID:** `{st.session_state.get('report_no', 'ALP')}`")
 
-    with st.expander("▶ ✉️ Email Sender Credentials", expanded=False):
-        st.caption("Your details are hidden here. Click to view or update:")
-        user_email = st.text_input("Sender Gmail:", placeholder="example@gmail.com")
-        user_password = st.text_input("16-Digit App Password:", type="password", placeholder="Enter App Password")
+    if st.button("🔒 Logout", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
 
     st.divider()
 
@@ -736,50 +699,26 @@ with st.sidebar:
 # 6. SUBMISSION & EXPORT
 # =========================================================
 
-st.subheader("6. Verification & Submission")
+st.subheader("6. Finalization & PDF Generation")
 
-c_pin, c_sub1, c_sub2 = st.columns([1.2, 1.4, 1])
-
-with c_pin:
-    entered_pin = st.text_input(
-        "Enter 8-Digit App Passcode:",
-        type="password",
-        max_chars=8,
-        placeholder="8-digit passcode",
-        help="Enter the 8-digit authorization passcode to submit."
-    )
+c_sub1, c_sub2 = st.columns([1.5, 1])
 
 with c_sub1:
     st.write("")
-    st.write("")
-    if st.button("🚀 FINAL SUBMIT & LOCK REPORT", type="primary", use_container_width=True):
-        if str(entered_pin).strip() != REQUIRED_APP_PASSCODE:
-            st.error("❌ Incorrect 8-Digit App Passcode. Enter the valid authorization code (default: 12345678).")
-        else:
-            with st.spinner("Locking report and generating official PDF..."):
-                pdf_bytes = create_pdf()
-                current_locked_ref = st.session_state.get('report_no', 'ALP')
-                
-                st.session_state["submitted_pdf"] = pdf_bytes
-                st.session_state["submitted_filename"] = f"ALPINE_HERBS_{current_locked_ref}.pdf"
-                st.session_state["last_submitted_ref"] = current_locked_ref
+    if st.button("🚀 FINAL GENERATE & LOCK REPORT", type="primary", use_container_width=True):
+        with st.spinner("Locking report and generating official PDF..."):
+            pdf_bytes = create_pdf()
+            current_locked_ref = st.session_state.get('report_no', 'ALP')
+            
+            st.session_state["submitted_pdf"] = pdf_bytes
+            st.session_state["submitted_filename"] = f"ALPINE_HERBS_{current_locked_ref}.pdf"
+            st.session_state["last_submitted_ref"] = current_locked_ref
 
-                email_sent, email_msg = False, ""
-                if user_email and user_password:
-                    email_sent, email_msg = try_send_email(pdf_bytes, user_email, user_password)
-
-                st.balloons()
-                
-                if email_sent:
-                    st.success(f"✅ Report `{current_locked_ref}` submitted and successfully emailed to Head Office!")
-                else:
-                    st.success(f"✅ Report `{current_locked_ref}` officially finalized and generated!")
-                    st.info("ℹ️ Cloud mail port was restricted by the host. Download your official PDF below or from the sidebar.")
-
-                reset_form_to_blank()
+            st.balloons()
+            st.success(f"✅ Report `{current_locked_ref}` successfully finalized and generated!")
+            reset_form_to_blank()
 
 with c_sub2:
-    st.write("")
     st.write("")
     if "submitted_pdf" in st.session_state:
         st.download_button(
