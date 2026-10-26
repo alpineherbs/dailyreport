@@ -25,7 +25,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     # 1. Sync Sales Entries to 'Sales' Tab
     for _, row in sales_df.iterrows():
         c_name = str(row.get("Client / Party Name", "")).strip()
-        if c_name:
+        if c_name and c_name != "nan":
             payload = {
                 "target": "sales",
                 "date": str(date_val),
@@ -52,7 +52,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     for _, row in office_df.iterrows():
         details = str(row.get("Expense Details", "")).strip()
         amt = float(row.get("Amount (Rs.)", 0))
-        if details and amt > 0:
+        if details and details != "nan" and amt > 0:
             payload = {
                 "target": "expenses",
                 "date": str(date_val),
@@ -74,7 +74,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     for _, row in staff_df.iterrows():
         p_name = str(row.get("Staff / Personnel Name", "")).strip()
         amt = float(row.get("Amount (Rs.)", 0))
-        if p_name and amt > 0:
+        if p_name and p_name != "nan" and amt > 0:
             payload = {
                 "target": "advances",
                 "date": str(date_val),
@@ -207,133 +207,99 @@ else:
 
     st.divider()
 
-    st.subheader("1. Sales & Cash Collections Grid")
-    current_form_id = st.session_state["form_id"]
-    raw_sales = st.data_editor(st.session_state["sales_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"sales_editor_{current_form_id}")
-    sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
-    computed_bill = sales["Qty"] * sales["Sale Rate (Rs.)"]
-    sales["Credit Given (Rs.)"] = (computed_bill - sales["Cash Collected (Rs.)"]).clip(lower=0.0)
-    sales["Total Sale (Rs.)"] = computed_bill.where(computed_bill > 0, sales["Cash Collected (Rs.)"] + sales["Credit Given (Rs.)"])
+    # Wrapped inside a form so table cell entries are automatically committed upon clicking submit
+    with st.form("daily_report_form"):
+        st.subheader("1. Sales & Cash Collections Grid")
+        current_form_id = st.session_state["form_id"]
+        raw_sales = st.data_editor(st.session_state["sales_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"sales_editor_{current_form_id}")
+        sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
+        computed_bill = sales["Qty"] * sales["Sale Rate (Rs.)"]
+        sales["Credit Given (Rs.)"] = (computed_bill - sales["Cash Collected (Rs.)"]).clip(lower=0.0)
+        sales["Total Sale (Rs.)"] = computed_bill.where(computed_bill > 0, sales["Cash Collected (Rs.)"] + sales["Credit Given (Rs.)"])
 
-    total_sales = float(sales["Total Sale (Rs.)"].sum())
-    total_cash = float(sales["Cash Collected (Rs.)"].sum())
-    total_credit = float(sales["Credit Given (Rs.)"].sum())
+        total_sales = float(sales["Total Sale (Rs.)"].sum())
+        total_cash = float(sales["Cash Collected (Rs.)"].sum())
+        total_credit = float(sales["Credit Given (Rs.)"].sum())
 
-    col_exp_1, col_exp_2 = st.columns(2)
-    with col_exp_1:
-        st.subheader("2. Operating / Office Expenses")
-        raw_office = st.data_editor(st.session_state["office_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"office_editor_{current_form_id}")
-        office = numeric_columns(raw_office, ["Amount (Rs.)"])
-        office_total = float(office["Amount (Rs.)"].sum())
+        col_exp_1, col_exp_2 = st.columns(2)
+        with col_exp_1:
+            st.subheader("2. Operating / Office Expenses")
+            raw_office = st.data_editor(st.session_state["office_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"office_editor_{current_form_id}")
+            office = numeric_columns(raw_office, ["Amount (Rs.)"])
+            office_total = float(office["Amount (Rs.)"].sum())
 
-    with col_exp_2:
-        st.subheader("3. Staff Advances")
-        raw_staff = st.data_editor(st.session_state["staff_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"staff_editor_{current_form_id}")
-        staff = numeric_columns(raw_staff, ["Amount (Rs.)"])
-        staff_total = float(staff["Amount (Rs.)"].sum())
+        with col_exp_2:
+            st.subheader("3. Staff Advances")
+            raw_staff = st.data_editor(st.session_state["staff_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"staff_editor_{current_form_id}")
+            staff = numeric_columns(raw_staff, ["Amount (Rs.)"])
+            staff_total = float(staff["Amount (Rs.)"].sum())
 
-    total_expenses = office_total + staff_total
-    net_cash = total_cash - total_expenses
-    sales_variance = total_sales - (total_cash + total_credit)
+        total_expenses = office_total + staff_total
+        net_cash = total_cash - total_expenses
+        sales_variance = total_sales - (total_cash + total_credit)
 
-    valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
+        valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
 
-    # =========================================================
-    # COMPACT FINANCIAL CLOSING SUMMARY
-    # =========================================================
-    st.divider()
-    st.markdown("##### 📊 Financial Closing Summary")
+        # COMPACT FINANCIAL CLOSING SUMMARY
+        st.divider()
+        st.markdown("##### 📊 Financial Closing Summary")
 
-    st.markdown("""
-    <style>
-    .compact-metric-container {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-    }
-    .compact-metric-card {
-        background: #EAF2EC;
-        border: 1px solid #C8DCCF;
-        border-top: 3px solid #2D7D52;
-        padding: 8px 12px;
-        border-radius: 6px;
-        flex: 1;
-        text-align: left;
-    }
-    .compact-label {
-        font-size: 0.68rem;
-        font-weight: 700;
-        color: #164E33;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    .compact-value {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: #0D2818;
-        margin-top: 2px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+        st.markdown("""
+        <style>
+        .compact-metric-container { display: flex; gap: 10px; margin-bottom: 15px; }
+        .compact-metric-card { background: #EAF2EC; border: 1px solid #C8DCCF; border-top: 3px solid #2D7D52; padding: 8px 12px; border-radius: 6px; flex: 1; text-align: left; }
+        .compact-label { font-size: 0.68rem; font-weight: 700; color: #164E33; text-transform: uppercase; letter-spacing: 0.5px; }
+        .compact-value { font-size: 0.95rem; font-weight: 700; color: #0D2818; margin-top: 2px; }
+        </style>
+        """, unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div class="compact-metric-container">
-        <div class="compact-metric-card">
-            <div class="compact-label">Total Sales Billed</div>
-            <div class="compact-value">{money(total_sales)}</div>
+        st.markdown(f"""
+        <div class="compact-metric-container">
+            <div class="compact-metric-card">
+                <div class="compact-label">Total Sales Billed</div>
+                <div class="compact-value">{money(total_sales)}</div>
+            </div>
+            <div class="compact-metric-card">
+                <div class="compact-label">Credit Given</div>
+                <div class="compact-value">{money(total_credit)}</div>
+            </div>
+            <div class="compact-metric-card">
+                <div class="compact-label">Gross Cash Collected</div>
+                <div class="compact-value">{money(total_cash)}</div>
+            </div>
         </div>
-        <div class="compact-metric-card">
-            <div class="compact-label">Credit Given</div>
-            <div class="compact-value">{money(total_credit)}</div>
-        </div>
-        <div class="compact-metric-card">
-            <div class="compact-label">Gross Cash Collected</div>
-            <div class="compact-value">{money(total_cash)}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div class="compact-metric-container">
-        <div class="compact-metric-card">
-            <div class="compact-label">Operating Expenses</div>
-            <div class="compact-value">{money(office_total)}</div>
+        st.markdown(f"""
+        <div class="compact-metric-container">
+            <div class="compact-metric-card">
+                <div class="compact-label">Operating Expenses</div>
+                <div class="compact-value">{money(office_total)}</div>
+            </div>
+            <div class="compact-metric-card">
+                <div class="compact-label">Staff Advances</div>
+                <div class="compact-value">{money(staff_total)}</div>
+            </div>
+            <div class="compact-metric-card" style="border-top-color: #0D2818; background: #D3E6DA;">
+                <div class="compact-label">Net Cash In Hand</div>
+                <div class="compact-value" style="color: #0D2818;">{money(net_cash)}</div>
+            </div>
         </div>
-        <div class="compact-metric-card">
-            <div class="compact-label">Staff Advances</div>
-            <div class="compact-value">{money(staff_total)}</div>
-        </div>
-        <div class="compact-metric-card" style="border-top-color: #0D2818; background: #D3E6DA;">
-            <div class="compact-label">Net Cash In Hand</div>
-            <div class="compact-value" style="color: #0D2818;">{money(net_cash)}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    def create_pdf():
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
-        styles = getSampleStyleSheet()
-        story = [Paragraph("<b>ALPINE HERBS PVT. LTD.</b>", styles["Title"])]
-        doc.build(story)
-        return buffer.getvalue()
+        def create_pdf():
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+            styles = getSampleStyleSheet()
+            story = [Paragraph("<b>ALPINE HERBS PVT. LTD.</b>", styles["Title"])]
+            doc.build(story)
+            return buffer.getvalue()
 
-    with st.sidebar:
-        st.header("⚙️ Controls")
-        if st.button("🔒 Logout", use_container_width=True):
-            st.session_state["authenticated"] = False
-            st.rerun()
+        # Submit button inside the form
+        st.divider()
+        submitted = st.form_submit_button("🚀 FINAL GENERATE & SYNC TO MASTER", type="use_container_width")
 
-    # =========================================================
-    # SUBMISSION & MASTER SYNC
-    # =========================================================
-    st.divider()
-    st.subheader("6. Finalization & Master Sync")
-    
-    c_sub1, c_sub2 = st.columns([1.5, 1])
-    with c_sub1:
-        st.write("")
-        if st.button("🚀 FINAL GENERATE & SYNC TO MASTER", type="primary", use_container_width=True):
+        if submitted:
             with st.spinner("Syncing Sales, Expenses, and Staff Advances..."):
                 pdf_bytes = create_pdf()
                 current_locked_ref = st.session_state.get('report_no', 'ALP')
@@ -343,13 +309,17 @@ else:
                 st.success(f"✅ Report `{current_locked_ref}` synced! ({synced_count} records posted across Sales, Expenses, and Staff Advances tabs)")
                 reset_form_to_blank()
 
-    with c_sub2:
-        st.write("")
-        if "submitted_pdf" in st.session_state:
-            st.download_button(
-                "⬇️ DOWNLOAD FINAL SUBMITTED PDF",
-                data=st.session_state["submitted_pdf"],
-                file_name=st.session_state.get("submitted_filename", "ALPINE_HERBS_REPORT.pdf"),
-                mime="application/pdf",
-                use_container_width=True
-            )
+    with st.sidebar:
+        st.header("⚙️ Controls")
+        if st.button("🔒 Logout", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.rerun()
+
+    if "submitted_pdf" in st.session_state:
+        st.download_button(
+            "⬇️ DOWNLOAD FINAL SUBMITTED PDF",
+            data=st.session_state["submitted_pdf"],
+            file_name=st.session_state.get("submitted_filename", "ALPINE_HERBS_REPORT.pdf"),
+            mime="application/pdf",
+            use_container_width=True
+        )
