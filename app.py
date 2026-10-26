@@ -14,10 +14,10 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 # =========================================================
 # GOOGLE APPS SCRIPT WEB APP LINK FOR SHEET SYNC
 # =========================================================
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec/exec"
 
 def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
-    if "YOUR_NEWLY_COPIED_WEB_APP_URL_HERE" in WEB_APP_URL or not WEB_APP_URL.startswith("http"):
+    if "YOUR_ACTUAL_DEPLOYED_URL" in WEB_APP_URL or not WEB_APP_URL.startswith("http"):
         return 0
 
     synced_count = 0
