@@ -130,7 +130,6 @@ else:
     .brand-sub { font-size: 0.85rem; color: #D3E6DA; }
     h3, h2, h1 { color: #164E33 !important; font-weight: 700; }
     div[data-testid="stMetric"] { background: #EAF2EC !important; border: 1px solid #C8DCCF !important; border-top: 4px solid #2D7D52 !important; padding: 10px 14px !important; border-radius: 8px !important; }
-    div.stButton > button[kind="primary"] { background: linear-gradient(180deg, #164E33 0%, #0D2818 100%) !important; border: none !important; color: white !important; font-weight: 700 !important; border-radius: 6px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -207,7 +206,6 @@ else:
 
     st.divider()
 
-    # Wrapped inside a form so table cell entries are automatically committed upon clicking submit
     with st.form("daily_report_form"):
         st.subheader("1. Sales & Cash Collections Grid")
         current_form_id = st.session_state["form_id"]
@@ -236,11 +234,9 @@ else:
 
         total_expenses = office_total + staff_total
         net_cash = total_cash - total_expenses
-        sales_variance = total_sales - (total_cash + total_credit)
 
         valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
 
-        # COMPACT FINANCIAL CLOSING SUMMARY
         st.divider()
         st.markdown("##### 📊 Financial Closing Summary")
 
@@ -295,9 +291,8 @@ else:
             doc.build(story)
             return buffer.getvalue()
 
-        # Submit button inside the form
         st.divider()
-        submitted = st.form_submit_button("🚀 FINAL GENERATE & SYNC TO MASTER", type="use_container_width")
+        submitted = st.form_submit_button("🚀 FINAL GENERATE & SYNC TO MASTER", use_container_width=True)
 
         if submitted:
             with st.spinner("Syncing Sales, Expenses, and Staff Advances..."):
