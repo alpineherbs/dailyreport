@@ -234,8 +234,30 @@ else:
 
     total_expenses = office_total + staff_total
     net_cash = total_cash - total_expenses
+    sales_variance = total_sales - (total_cash + total_credit)
 
     valid_sales = sales[sales["Client / Party Name"].astype(str).str.strip() != ""]
+
+    # =========================================================
+    # FINANCIAL CLOSING SUMMARY (RESTORED)
+    # =========================================================
+    st.divider()
+    st.subheader("5. Financial Closing Summary")
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Total Sales Billed", money(total_sales))
+    s2.metric("Credit Given (Debit to Clients)", money(total_credit))
+    s3.metric("Gross Cash Collected", money(total_cash))
+
+    s4, s5, s6 = st.columns(3)
+    s4.metric("Operating Expenses", money(office_total))
+    s5.metric("Staff Advances", money(staff_total))
+    s6.metric("Total Deductions", money(total_expenses))
+
+    s7, s8, s9 = st.columns(3)
+    s7.metric("NET CLOSING CASH IN HAND", money(net_cash), delta=f"Collected {money(total_cash)}")
+    s8.metric("Sales Variance", money(sales_variance))
+    s9.metric("Total Deductions Summary", money(total_expenses))
 
     def create_pdf():
         buffer = BytesIO()
@@ -251,13 +273,32 @@ else:
             st.session_state["authenticated"] = False
             st.rerun()
 
+    # =========================================================
+    # SUBMISSION & MASTER SYNC
+    # =========================================================
+    st.divider()
     st.subheader("6. Finalization & Master Sync")
-    if st.button("🚀 FINAL GENERATE & SYNC TO MASTER", type="primary", use_container_width=True):
-        with st.spinner("Syncing Sales, Expenses, and Staff Advances..."):
-            pdf_bytes = create_pdf()
-            current_locked_ref = st.session_state.get('report_no', 'ALP')
-            synced_count = sync_all_data_to_google_sheet(valid_sales, office, staff, staff_name, current_locked_ref, selected_date)
-            st.session_state["submitted_pdf"] = pdf_bytes
-            st.balloons()
-            st.success(f"✅ Report `{current_locked_ref}` synced! ({synced_count} records posted across Sales, Expenses, and Staff Advances tabs)")
-            reset_form_to_blank()
+    
+    c_sub1, c_sub2 = st.columns([1.5, 1])
+    with c_sub1:
+        st.write("")
+        if st.button("🚀 FINAL GENERATE & SYNC TO MASTER", type="primary", use_container_width=True):
+            with st.spinner("Syncing Sales, Expenses, and Staff Advances..."):
+                pdf_bytes = create_pdf()
+                current_locked_ref = st.session_state.get('report_no', 'ALP')
+                synced_count = sync_all_data_to_google_sheet(valid_sales, office, staff, staff_name, current_locked_ref, selected_date)
+                st.session_state["submitted_pdf"] = pdf_bytes
+                st.balloons()
+                st.success(f"✅ Report `{current_locked_ref}` synced! ({synced_count} records posted across Sales, Expenses, and Staff Advances tabs)")
+                reset_form_to_blank()
+
+    with c_sub2:
+        st.write("")
+        if "submitted_pdf" in st.session_state:
+            st.download_button(
+                "⬇️ DOWNLOAD FINAL SUBMITTED PDF",
+                data=st.session_state["submitted_pdf"],
+                file_name=st.session_state.get("submitted_filename", "ALPINE_HERBS_REPORT.pdf"),
+                mime="application/pdf",
+                use_container_width=True
+            )
