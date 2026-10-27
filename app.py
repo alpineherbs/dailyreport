@@ -12,16 +12,22 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # =========================================================
-# GOOGLE APPS SCRIPT WEB APP LINK FOR SHEET SYNC
+# 1. USER ACCOUNTS & PASSWORDS (STORED DIRECTLY IN THIS REPO)
+# Add, edit, or remove staff credentials here:
 # =========================================================
-# Replace with your newly deployed Web App URL:
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyhV5JIH5EkDzukuq1szvOLOn0rG5-1OlyClJ-QR6DWOj9JaCGlxL0FfokPHx9MGkAd/exec"
+AUTHORIZED_USERS = {
+    "Alpine": "AHP@123",
+    "Pritam": "Pritam@2024",
+    "Admin": "Admin@Alpine123",
+    "Manager": "Alpine@Birgunj"
+}
+
+# =========================================================
+# 2. GOOGLE APPS SCRIPT WEB APP LINK
+# =========================================================
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
 def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
-    """
-    Sends all tables in a single high-speed batch payload.
-    Prevents timeouts and ensures atomic updates to the Google Sheet.
-    """
     if not WEB_APP_URL or not WEB_APP_URL.startswith("http"):
         st.error("❌ Google Apps Script URL is empty or invalid.")
         return False, 0
@@ -86,16 +92,14 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     master_payload = {
         "date": str(date_val),
         "report_no": str(report_ref),
-        "staff_name": str(staff_name_val if staff_name_val else "Pritam Gupta"),
+        "staff_name": str(staff_name_val if staff_name_val else "Field MR"),
         "sales": sales_list,
         "expenses": office_list,
         "advances": staff_list
     }
 
     try:
-        # allow_redirects=True is required for Google Apps Script 302 redirects
         response = requests.post(WEB_APP_URL, json=master_payload, timeout=25, allow_redirects=True)
-        
         if response.status_code == 200:
             try:
                 res_json = response.json()
@@ -105,47 +109,57 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
                     st.error(f"⚠️ Google Script Error: {res_json.get('message')}")
                     return False, 0
             except Exception:
-                # Script succeeded without returning JSON body
                 return True, total_records
         else:
             st.error(f"❌ Google Server responded with status code: {response.status_code}")
             return False, 0
 
     except requests.exceptions.Timeout:
-        st.error("⏳ Connection timed out. Please check your internet or retry.")
+        st.error("⏳ Request timed out. Please check connection and try again.")
         return False, 0
     except requests.exceptions.RequestException as e:
-        st.error(f"❌ Network Error connecting to Google Sheets: {e}")
+        st.error(f"❌ Sync network error: {e}")
         return False, 0
 
 # =========================================================
-# PAGE CONFIGURATION & LOGIN
+# PAGE CONFIGURATION & LOGIN SCREEN
 # =========================================================
 
 st.set_page_config(page_title="ALPINE HERBS | Daily Field Report", page_icon="🌿", layout="wide")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+    st.session_state["current_user"] = ""
 
+# --- LOGIN SCREEN ---
 if not st.session_state["authenticated"]:
-    st.title("🌿 ALPINE HERBS PVT. LTD.")
-    st.subheader("Field Operations Portal (Repository A)")
+    st.markdown("""
+    <div style="text-align: center; margin-top: 2rem;">
+        <h1 style="color: #164E33; margin-bottom: 0px;">🌿 ALPINE HERBS PVT. LTD.</h1>
+        <p style="color: #555; font-size: 1.1rem;">Medical Representative Daily Field Reporting Portal</p>
+    </div>
+    """, unsafe_allow_html=True)
     st.divider()
 
-    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
+    col_l1, col_l2, col_l3 = st.columns([1, 1.1, 1])
     with col_l2:
-        st.markdown("### 🔐 Staff Login")
-        login_user = st.text_input("Username", placeholder="Username", key="auth_user")
+        st.markdown("#### 🔐 Staff Login")
+        login_user = st.text_input("Username", placeholder="e.g. Alpine or Pritam", key="auth_user")
         login_pass = st.text_input("Password", type="password", placeholder="Password", key="auth_pass")
         st.write("")
-        if st.button("🔑 Login to Portal", type="primary", use_container_width=True):
-            if login_user.strip() == "Alpine" and login_pass.strip() == "AHP@123":
+        
+        if st.button("🔑 Access Portal", type="primary", use_container_width=True):
+            user_clean = login_user.strip()
+            pass_clean = login_pass.strip()
+            if user_clean in AUTHORIZED_USERS and AUTHORIZED_USERS[user_clean] == pass_clean:
                 st.session_state["authenticated"] = True
+                st.session_state["current_user"] = user_clean
                 st.rerun()
             else:
                 st.error("❌ Invalid Username or Password")
+
+# --- MAIN DASHBOARD (LOGGED IN) ---
 else:
-    # BRAND STYLING
     st.markdown("""
     <style>
     .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1550px; }
@@ -157,16 +171,18 @@ else:
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
+    logged_user = st.session_state.get("current_user", "Staff")
+
+    st.markdown(f"""
     <div class="brand-header">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
                 <div class="brand-title">🌿 ALPINE HERBS PVT. LTD.</div>
                 <div class="brand-sub">BIRGUNJ, NEPAL &nbsp;|&nbsp; MEDICAL REPRESENTATIVE DAILY FIELD CLOSING</div>
             </div>
-            <div style="text-align: right; font-size: 0.8rem; color: #E0EFE5;">
-                <div><strong>ISO GMP Standard</strong></div>
-                <div>Field Operations Portal (Repository A)</div>
+            <div style="text-align: right; font-size: 0.85rem; color: #E0EFE5;">
+                <div>User: <strong>{logged_user}</strong></div>
+                <div>ISO GMP Certified Standard</div>
             </div>
         </div>
     </div>
@@ -183,7 +199,7 @@ else:
             bs = nepali_datetime.date.from_datetime_date(d)
             return f"{bs.year:04d}-{bs.month:02d}-{bs.day:02d} B.S."
         except Exception:
-            return "B.S. Date (Nepali-Datetime module active)"
+            return "Nepali B.S. Calendar"
 
     def generate_report_no(d):
         if not isinstance(d, (date, datetime)): d = date.today()
@@ -248,7 +264,7 @@ else:
         st.session_state["report_date"] = selected_date
         st.caption(f"🇳🇵 **Miti (B.S.):** `{nepali_date(selected_date)}`")
     with c2: 
-        staff_name = st.text_input("MR / Staff Name", placeholder="e.g. Pritam Gupta")
+        staff_name = st.text_input("MR / Staff Name", value=logged_user if logged_user != "Alpine" else "Pritam Gupta")
     with c3: 
         route = st.text_input("Route / Area Covered", placeholder="e.g. Birgunj To Lautan")
     with c4: 
@@ -357,7 +373,7 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        def create_pdf(rep_no, dt, name, rt, s_df, o_df, st_df, t_sale, t_cash, net_c):
+        def create_pdf(rep_no, dt, name, rt, t_sale, t_cash, net_c):
             buffer = BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
             styles = getSampleStyleSheet()
@@ -366,11 +382,10 @@ else:
 
             story = [
                 Paragraph("<b>ALPINE HERBS PVT. LTD. — DAILY FIELD CLOSING REPORT</b>", title_style),
-                Paragraph(f"<b>Report No:</b> {rep_no} | <b>Date:</b> {dt} | <b>Staff:</b> {name} | <b>Route:</b> {rt}", meta_style),
+                Paragraph(f"<b>Report Ref:</b> {rep_no} | <b>Date:</b> {dt} | <b>MR:</b> {name} | <b>Route:</b> {rt}", meta_style),
                 Spacer(1, 4*mm)
             ]
 
-            # Summary Table
             summary_data = [
                 ["Total Sales Billed", "Gross Cash Collected", "Total Expenses", "Net Cash In Hand"],
                 [money(t_sale), money(t_cash), money(office_total + staff_total), money(net_c)]
@@ -393,10 +408,10 @@ else:
 
         if submitted:
             current_locked_ref = st.session_state.get('report_no', 'ALP')
-            with st.spinner("⏳ Syncing Sales, Expenses, and Staff Advances to Google Sheet Master..."):
+            with st.spinner("⏳ Syncing report records to Google Sheets..."):
                 pdf_bytes = create_pdf(
                     current_locked_ref, selected_date, staff_name, route, 
-                    valid_sales, office, staff, total_sales, total_cash, net_cash
+                    total_sales, total_cash, net_cash
                 )
                 success, count = sync_all_data_to_google_sheet(
                     valid_sales, office, staff, staff_name, current_locked_ref, selected_date
@@ -411,8 +426,10 @@ else:
 
     with st.sidebar:
         st.header("⚙️ Controls")
+        st.write(f"Logged in as: **{logged_user}**")
         if st.button("🔒 Logout", use_container_width=True):
             st.session_state["authenticated"] = False
+            st.session_state["current_user"] = ""
             st.rerun()
 
     if "submitted_pdf" in st.session_state:
