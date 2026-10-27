@@ -27,8 +27,8 @@ AUTHORIZED_USERS = {
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
 def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
-    if not WEB_APP_URL or not WEB_APP_URL.startswith("http"):
-        st.error("❌ Google Apps Script URL is empty or invalid.")
+    if not WEB_APP_URL or not str(WEB_APP_URL).startswith("http"):
+        st.error("Google Apps Script URL is empty or invalid.")
         return False, 0
 
     sales_list = []
@@ -82,7 +82,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
 
     total_records = len(sales_list) + len(office_list) + len(staff_list)
     if total_records == 0:
-        st.warning("⚠️ No valid rows found to sync.")
+        st.warning("No valid rows found to sync.")
         return True, 0
 
     master_payload = {
@@ -102,76 +102,56 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
                 if res_json.get("status") == "success":
                     return True, res_json.get("records_synced", total_records)
                 else:
-                    st.error(f"⚠️ Google Script Error: {res_json.get('message')}")
+                    st.error("Google Script Error: " + str(res_json.get("message", "Unknown error")))
                     return False, 0
             except Exception:
                 return True, total_records
         else:
-            st.error(f"❌ Google Server HTTP {response.status_code}")
+            st.error("Google Server HTTP Status: " + str(response.status_code))
             return False, 0
     except requests.exceptions.RequestException as e:
-        st.error(f"❌ Network Error: {e}")
+        st.error("Network Error: " + str(e))
         return False, 0
 
 # =========================================================
 # 3. PAGE INITIALIZATION & AUTHENTICATION
 # =========================================================
-st.set_page_config(page_title="ALPINE HERBS | Operations Portal", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="ALPINE HERBS - Operations Portal", layout="wide")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["current_user"] = ""
 
 if not st.session_state["authenticated"]:
-    st.markdown("""
-    <div style="text-align: center; margin-top: 3rem; margin-bottom: 2rem;">
-        <h1 style="color: #0D2818; font-weight: 800; font-size: 2.2rem; margin-bottom: 0;">🌿 ALPINE HERBS PVT. LTD.</h1>
-        <p style="color: #164E33; font-size: 1rem; font-weight: 600; letter-spacing: 0.5px;">
-            PHARMACEUTICAL FIELD CLOSING & AUDIT SYSTEM (ISO GMP COMPLIANT)
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.title("ALPINE HERBS PVT. LTD.")
+    st.subheader("Field Operations & Closing Portal")
+    st.divider()
 
-    col_l1, col_l2, col_l3 = st.columns([1, 1.1, 1])
-    with col_l2:
-        with st.container(border=True):
-            st.markdown("#### 🔐 Staff Sign In")
-            login_user = st.text_input("Username / MR Code", placeholder="e.g. Alpine or Pritam")
-            login_pass = st.text_input("Password", type="password", placeholder="Enter password")
-            st.write("")
-            if st.button("🔑 Login to Portal", type="primary", use_container_width=True):
-                user_clean = login_user.strip()
-                pass_clean = login_pass.strip()
-                if user_clean in AUTHORIZED_USERS and AUTHORIZED_USERS[user_clean] == pass_clean:
-                    st.session_state["authenticated"] = True
-                    st.session_state["current_user"] = user_clean
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid username or password.")
+    c_pad1, c_box, c_pad2 = st.columns([1, 1.2, 1])
+    with c_box:
+        st.markdown("### Staff Sign In")
+        login_user = st.text_input("Username / MR Code", placeholder="e.g. Alpine or Pritam")
+        login_pass = st.text_input("Password", type="password", placeholder="Enter password")
+        st.write("")
+        if st.button("Login to Portal", type="primary", use_container_width=True):
+            user_clean = login_user.strip()
+            pass_clean = login_pass.strip()
+            if user_clean in AUTHORIZED_USERS and AUTHORIZED_USERS[user_clean] == pass_clean:
+                st.session_state["authenticated"] = True
+                st.session_state["current_user"] = user_clean
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
     st.stop()
 
 # =========================================================
-# 4. APP STYLING & HELPERS
+# 4. APP HELPERS & DATA CACHE
 # =========================================================
-st.markdown("""
-<style>
-.block-container { padding-top: 1.2rem; padding-bottom: 2.5rem; max-width: 1560px; }
-.brand-header { background: linear-gradient(135deg, #0D2818 0%, #164E33 100%); color: white; padding: 1.2rem 1.8rem; border-radius: 10px; margin-bottom: 1.2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.06); }
-.brand-title { font-size: 1.65rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px; }
-.brand-sub { font-size: 0.85rem; color: #D3E6DA; font-weight: 500; }
-h3, h2, h1 { color: #164E33 !important; font-weight: 700; }
-div[data-testid="stMetric"] { background: #FFFFFF !important; border: 1px solid #D5E4DB !important; border-top: 4px solid #164E33 !important; padding: 12px 16px !important; border-radius: 8px !important; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-div[data-testid="stMetricLabel"] { font-size: 0.75rem !important; font-weight: 700 !important; color: #164E33 !important; text-transform: uppercase; }
-div[data-testid="stMetricValue"] { font-size: 1.25rem !important; font-weight: 800 !important; color: #0D2818 !important; }
-.helper-tag { background: #EBF5F0; border-left: 3px solid #2D7D52; padding: 8px 12px; font-size: 0.82rem; color: #164E33; border-radius: 4px; margin-bottom: 10px; }
-</style>
-""", unsafe_allow_html=True)
-
 logged_user = st.session_state.get("current_user", "Staff")
 
-def money(value):
+def money(val):
     try:
-        return f"Rs. {float(value or 0):,.2f}"
+        return "Rs. {:,.2f}".format(float(val or 0.0))
     except Exception:
         return "Rs. 0.00"
 
@@ -181,14 +161,14 @@ def nepali_date(d):
         if not isinstance(d, (date, datetime)):
             d = date.today()
         bs = nepali_datetime.date.from_datetime_date(d)
-        return f"{bs.year:04d}-{bs.month:02d}-{bs.day:02d} B.S."
+        return "{:04d}-{:02d}-{:02d} B.S.".format(bs.year, bs.month, bs.day)
     except Exception:
         return "Nepali Calendar Active"
 
 def generate_report_no(d):
     if not isinstance(d, (date, datetime)):
         d = date.today()
-    return f"ALP-{d.strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+    return "ALP-" + d.strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:4].upper()
 
 def init_sales():
     return pd.DataFrame([
@@ -198,12 +178,12 @@ def init_sales():
 
 def init_office():
     return pd.DataFrame([
-        {"Expense Details": "", "Paid To / Vendor": "", "Payment Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}
+        {"Expense Details": "", "Paid To / Vendor": "Vendor", "Payment Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}
     ])
 
 def init_staff():
     return pd.DataFrame([
-        {"Staff / Personnel Name": "", "Purpose / Details": "", "Payment Type": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}
+        {"Staff / Personnel Name": "", "Purpose / Details": "Tour Advance", "Payment Type": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}
     ])
 
 if "sales_data" not in st.session_state:
@@ -228,31 +208,19 @@ def reset_all_fields():
 # =========================================================
 # 5. TOP HEADER & METADATA
 # =========================================================
-st.markdown(f"""
-<div class="brand-header">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <div class="brand-title">🌿 ALPINE HERBS PVT. LTD.</div>
-            <div class="brand-sub">BIRGUNJ, NEPAL &nbsp;|&nbsp; MEDICAL REPRESENTATIVE DAILY FIELD CLOSING</div>
-        </div>
-        <div style="text-align: right; font-size: 0.82rem; color: #E0EFE5;">
-            <div>Logged as: <strong>{logged_user}</strong></div>
-            <div>ISO 9001:2015 & GMP Certified</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+st.title("ALPINE HERBS PVT. LTD.")
+st.caption("Birgunj, Nepal | Medical Representative Daily Field Operations | Logged: " + logged_user)
 
 c1, c2, c3, c4 = st.columns([1.1, 1.3, 1.4, 1.1])
 with c1:
     selected_date = st.date_input("Date (A.D.)", value=st.session_state.get("report_date", date.today()))
     st.session_state["report_date"] = selected_date
-    st.caption(f"🇳🇵 **Nepali Miti:** `{nepali_date(selected_date)}`")
+    st.caption("Nepali Miti: " + nepali_date(selected_date))
 with c2:
     staff_name = st.text_input("MR / Representative Name", value=st.session_state.get("saved_mr_name", logged_user if logged_user != "Alpine" else "Pritam Gupta"))
     st.session_state["saved_mr_name"] = staff_name
 with c3:
-    route = st.text_input("Territory / Route Covered", placeholder="e.g. Birgunj — Lautan — Kalaiya")
+    route = st.text_input("Territory / Route Covered", placeholder="e.g. Birgunj - Lautan - Kalaiya")
 with c4:
     st.text_input("Report Reference No.", value=st.session_state.get("report_no", ""), disabled=True)
 
@@ -286,12 +254,6 @@ net_cash_in_hand = total_cash_collected - total_expenses_all
 # =========================================================
 # 7. LIVE REAL-TIME FINANCIAL SUMMARY BAR
 # =========================================================
-st.markdown("##### 📊 Live Real-Time Financial Summary *(Updates dynamically)*")
+st.subheader("Financial Summary (Live Updates)")
 m1, m2, m3, m4, m5, m6 = st.columns(6)
-m1.metric("Total Sales Billed", money(total_sales_billed))
-m2.metric("Gross Cash Collected", money(total_cash_collected))
-m3.metric("Credit Given", money(total_credit_given))
-m4.metric("Operating Expenses", money(total_office_exp))
-m5.metric("Staff Advances", money(total_staff_adv))
-m6.metric(
-    "N
+m1.metric("Total Sales Billed", m
