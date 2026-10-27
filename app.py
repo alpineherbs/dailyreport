@@ -16,7 +16,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 # =========================================================
 USERS = {
     "Alpine": "AHP@123",
-    "Pritam": "Pritam@2024",
+    "Sales": "Sales@2026",
     "Admin": "AlpineAdmin@123",
     "Manager": "Alpine@Birgunj"
 }
