@@ -111,7 +111,8 @@ def sync_to_sheets(sales_df, office_df, staff_df, mr_name, rep_ref, rep_date):
 # =========================================================
 # 3. PAGE INITIALIZATION & ALPINE BRANDING
 # =========================================================
-st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", layout="wide")
+# ✅ After (with the 🌿 icon):
+st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", page_icon="🌿", layout="wide")
 
 st.markdown("""
 <style>
