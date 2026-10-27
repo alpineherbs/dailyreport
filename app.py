@@ -33,6 +33,7 @@ input::placeholder { color: #8FA698 !important; opacity: 1 !important; }
 .g-acc { background: #E7F5ED; border: 2px solid #164E33; border-radius: 8px; padding: 12px; height: 100%; }
 .s-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #C8DEC2; font-size: 0.9rem; }
 .s-val { font-weight: 700; color: #0D2818; }
+.user-card { background: #EAF5EE; border-left: 4px solid #164E33; padding: 10px; border-radius: 4px; margin-bottom: 12px; }
 </style>""", unsafe_allow_html=True)
 
 if "authenticated" not in st.session_state:
@@ -69,6 +70,38 @@ INIT_SALES = pd.DataFrame([
 INIT_OFFICE = pd.DataFrame([{"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
 INIT_STAFF = pd.DataFrame([{"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
 
+# SIDEBAR: USER INFO, LOGOUT & LIVE TEST
+with st.sidebar:
+    st.markdown("### 👤 User Session")
+    st.markdown(f"""<div class="user-card">
+    <b>Officer:</b> {cur_user}<br>
+    <b>Branch:</b> Birgunj, Nepal<br>
+    <b>Status:</b> 🟢 Active Online<br>
+    <b>Ref:</b> <code>{st.session_state['rep_no']}</code>
+    </div>""", unsafe_allow_html=True)
+    
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        if st.button("🔒 Logout", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.session_state["user"] = ""
+            st.rerun()
+    with col_s2:
+        if st.button("🧪 Ping Sheet", use_container_width=True, help="Test live connection to Google Sheet"):
+            try:
+                test_res = requests.get(WEB_APP_URL, timeout=8)
+                if test_res.status_code == 200: st.success("🟢 Sheet Connected!")
+                else: st.error(f"HTTP {test_res.status_code}")
+            except Exception as e: st.error(f"Offline: {e}")
+
+    st.divider()
+    st.markdown("### 📋 Client Dues Lookup")
+    sq = st.text_input("Search Chemist or Town", placeholder="Search chemist or town").strip().lower()
+    matches = [c for c in CLIENT_DATABASE if sq in c['name'].lower() or sq in c['area'].lower()] if sq else CLIENT_DATABASE[:6]
+    for item in matches[:8]:
+        st.markdown(f"**{item['name']}** (`{item['code']}`)\n{item['area']} | Due: **Rs. {item['dues']:,}**")
+        st.write("---")
+
 st.markdown(f"""<div style="background:linear-gradient(135deg, #0D2818, #164E33); padding:12px 18px; border-radius:8px; color:white; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
 <div><span style="font-size:1.5rem; font-weight:800;">🌿 ALPINE HERBS PVT. LTD.</span><br><span style="font-size:0.8rem; color:#D5EBDD;">BIRGUNJ, NEPAL | DAILY TOUR CLOSING</span></div>
 <div style="text-align:right; font-size:0.82rem;">Officer: <b>{cur_user}</b><br>ISO GMP Standard</div></div>""", unsafe_allow_html=True)
@@ -81,7 +114,7 @@ with c4: st.text_input("Report Ref", value=st.session_state["rep_no"], disabled=
 
 t1, t2, t3 = st.tabs(["🛒 1. Sales & Credit Ledger", "🏢 2. Operating Expenses", "👥 3. Staff Advances"])
 with t1:
-    st.caption("Press Tab to jump between cells, Enter to move down rows. Credit auto-calculates if left at 0.")
+    st.caption("Press Tab to jump between cells, Enter to move down. Credit auto-calculates if left at 0.")
     ed_s = st.data_editor(INIT_SALES, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_s")
 with t2:
     st.caption("Record route fuel, food, logistics, and local operational costs.")
@@ -149,9 +182,14 @@ def sync_to_sheets():
     payload = {"date": str(rep_date), "report_no": str(st.session_state["rep_no"]), "staff_name": str(mr_name), "sales": s_items, "expenses": e_items, "advances": a_items}
     try:
         res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
-        return (True, len(s_items) + len(e_items) + len(a_items)) if res.status_code == 200 else (False, 0)
+        if res.status_code == 200:
+            st.session_state["last_sync_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return (True, len(s_items) + len(e_items) + len(a_items))
+        else:
+            st.error(f"Google responded with HTTP {res.status_code}. Check Apps Script permissions.")
+            return (False, 0)
     except Exception as err:
-        st.error(f"Sync Error: {err}"); return False, 0
+        st.error(f"Sync Connection Error: {err}"); return False, 0
 
 def make_pdf():
     buf = BytesIO()
@@ -164,74 +202,4 @@ def make_pdf():
     ]
     s_rows = [["Inv #", "Client Name", "Address", "Product", "Qty", "Rate", "Cash Recd", "Credit Given", "Total"]]
     for _, r in ed_s.iterrows():
-        q, rt, c, cm = float(r.get("Qty", 0) or 0), float(r.get("Rate (Rs.)", 0) or 0), float(r.get("Cash Recd (Rs.)", 0) or 0), float(r.get("Credit Given (Rs.)", 0) or 0)
-        tb = q * rt; cb = cm if cm > 0 else max(0.0, tb - c)
-        if tb == 0: tb = c + cb
-        if q > 0 or c > 0 or cb > 0 or str(r.get("Product Name", "")).strip():
-            s_rows.append([str(r.get("Invoice No.", "")), str(r.get("Client Name", "")), str(r.get("Address", "")), str(r.get("Product Name", "")), str(q), money(rt), money(c), money(cb), money(tb)])
-    if len(s_rows) > 1:
-        story.append(Paragraph("<b>1. Sales & Credit Ledger</b>", styles["Heading2"]))
-        t_s = Table(s_rows, colWidths=[20*mm, 52*mm, 26*mm, 52*mm, 15*mm, 27*mm, 27*mm, 27*mm, 27*mm])
-        t_s.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#164E33")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey)]))
-        story.extend([t_s, Spacer(1, 3*mm)])
-
-    e_rows = [["Details", "Paid To", "Mode", "Amount", "Remarks"]]
-    for _, r in ed_o.iterrows():
-        a = float(r.get("Amount (Rs.)", 0) or 0)
-        if a > 0 or str(r.get("Details", "")).strip():
-            e_rows.append([str(r.get("Details", "")), str(r.get("Paid To", "")), str(r.get("Mode", "")), money(a), str(r.get("Remarks", ""))])
-    if len(e_rows) > 1:
-        story.append(Paragraph("<b>2. Operating Expenses</b>", styles["Heading2"]))
-        t_e = Table(e_rows, colWidths=[90*mm, 55*mm, 35*mm, 35*mm, 58*mm])
-        t_e.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2D7D52")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey)]))
-        story.extend([t_e, Spacer(1, 3*mm)])
-
-    a_rows = [["Staff Name", "Purpose", "Category", "Amount", "Remarks"]]
-    for _, r in ed_st.iterrows():
-        a = float(r.get("Amount (Rs.)", 0) or 0)
-        if a > 0 or str(r.get("Staff Name", "")).strip():
-            a_rows.append([str(r.get("Staff Name", "")), str(r.get("Purpose", "")), str(r.get("Category", "")), money(a), str(r.get("Remarks", ""))])
-    if len(a_rows) > 1:
-        story.append(Paragraph("<b>3. Staff Advances</b>", styles["Heading2"]))
-        t_a = Table(a_rows, colWidths=[65*mm, 75*mm, 45*mm, 35*mm, 53*mm])
-        t_a.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2D7D52")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey)]))
-        story.extend([t_a, Spacer(1, 3*mm)])
-
-    story.append(Paragraph("<b>4. Grand Total Reconciliation</b>", styles["Heading2"]))
-    sum_rows = [["Total Sales", "Credit Issued", "Cash Collected", "Total Expenses", "Staff Advances", "NET CASH IN HAND"],
-                [money(tot_sales), money(tot_credit), money(tot_cash), money(tot_exp), money(tot_adv), money(net_cash)]]
-    t_sum = Table(sum_rows, colWidths=[46*mm]*6, style=[('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0D2818")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#EAF5EE")), ('ALIGN', (0,0), (-1,-1), 'CENTER')])
-    story.extend([t_sum, Spacer(1, 5*mm)])
-    story.append(Table([["\n____________________", "\n____________________", "\n____________________"], ["Medical Representative", "Area Sales Manager", "Head Office Audit"]], colWidths=[91*mm]*3, style=[('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-    doc.build(story)
-    return buf.getvalue()
-
-st.write("")
-b1, b2 = st.columns([3, 1])
-with b1:
-    if st.button("CONFIRM & SYNC REPORT TO MASTER", type="primary", use_container_width=True):
-        with st.spinner("Syncing to Google Sheets..."):
-            ok, count = sync_to_sheets()
-            if ok:
-                st.session_state["pdf"] = make_pdf()
-                st.success(f"Report {st.session_state['rep_no']} synchronized! ({count} records updated in Google Sheets)")
-with b2:
-    if st.button("Reset Form", use_container_width=True):
-        st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
-        for k in ["ed_s", "ed_o", "ed_st", "pdf"]: st.session_state.pop(k, None)
-        st.rerun()
-
-if "pdf" in st.session_state:
-    st.download_button("DOWNLOAD OFFICIAL SIGN-OFF PDF AUDIT VOUCHER", data=st.session_state["pdf"], file_name=f"{st.session_state['rep_no']}.pdf", mime="application/pdf", use_container_width=True)
-
-with st.sidebar:
-    st.markdown("### Client Ledger & Dues")
-    sq = st.text_input("Search Chemist or Town", placeholder="Search chemist or town").strip().lower()
-    matches = [c for c in CLIENT_DATABASE if sq in c['name'].lower() or sq in c['area'].lower()] if sq else CLIENT_DATABASE[:6]
-    for item in matches[:8]:
-        st.markdown(f"**{item['name']}** (`{item['code']}`)\n{item['area']} | Due: **Rs. {item['dues']:,}**")
-        st.write("---")
-    st.write(f"Logged as: **{cur_user}**")
-    if st.button("Sign Out", use_container_width=True):
-        st.session_state["authenticated"] = False
-        st.rerun()
+        q, rt, c,
