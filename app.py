@@ -14,17 +14,22 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 # =========================================================
 # GOOGLE APPS SCRIPT WEB APP LINK FOR SHEET SYNC
 # =========================================================
+# Replace with your newly deployed Web App URL:
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
 def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
-    if "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec" in WEB_APP_URL or not WEB_APP_URL.startswith("http"):
-        return 0
+    """
+    Sends all tables in a single high-speed batch payload.
+    Prevents timeouts and ensures atomic updates to the Google Sheet.
+    """
+    if not WEB_APP_URL or not WEB_APP_URL.startswith("http"):
+        st.error("❌ Google Apps Script URL is empty or invalid.")
+        return False, 0
 
-    synced_count = 0
-
-    # 1. Sync Sales Entries to 'Sales' Tab
+    # 1. Prepare Sales Payload
+    sales_list = []
     for _, row in sales_df.iterrows():
-        c_name = str(row.get("Client / Party Name", "Walk-in Party")).strip()
+        c_name = str(row.get("Client / Party Name", "")).strip()
         p_name = str(row.get("Goods / Product Name", "")).strip()
         qty_val = float(row.get("Qty", 0))
         rate_val = float(row.get("Sale Rate (Rs.)", 0))
@@ -33,73 +38,85 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
         total_val = float(row.get("Total Sale (Rs.)", 0))
 
         if qty_val > 0 or cash_val > 0 or credit_val > 0 or total_val > 0 or (p_name and p_name != "nan"):
-            payload = {
-                "target": "sales",
-                "date": str(date_val),
+            sales_list.append({
                 "invoice": str(row.get("Invoice No.", "AUTO-INV")),
                 "client_name": c_name if c_name and c_name != "nan" else "Walk-in Party",
                 "address": str(row.get("Client Address", "Birgunj")),
-                "product_name": p_name if p_name else "General Stock",
+                "product_name": p_name if p_name and p_name != "nan" else "General Stock",
                 "qty": qty_val,
                 "rate": rate_val,
                 "cash_collected": cash_val,
                 "credit_given": credit_val,
-                "total_sale": total_val if total_val > 0 else (qty_val * rate_val),
-                "staff_name": str(staff_name_val if staff_name_val else "Pritam"),
-                "report_no": str(report_ref)
-            }
-            try:
-                res = requests.post(WEB_APP_URL, json=payload, timeout=8)
-                if res.status_code == 200:
-                    synced_count += 1
-            except Exception as e:
-                print(f"Sales Sync Error: {e}")
+                "total_sale": total_val if total_val > 0 else (qty_val * rate_val)
+            })
 
-    # 2. Sync Operating Expenses to 'Expenses' Tab
+    # 2. Prepare Expenses Payload
+    office_list = []
     for _, row in office_df.iterrows():
         details = str(row.get("Expense Details", "")).strip()
         amt = float(row.get("Amount (Rs.)", 0))
         if details and details != "nan" and amt > 0:
-            payload = {
-                "target": "expenses",
-                "date": str(date_val),
+            office_list.append({
                 "details": details,
                 "paid_to": str(row.get("Paid To / Vendor", "Vendor")),
                 "mode": str(row.get("Payment Mode", "Cash")),
                 "amount": amt,
-                "staff_name": str(staff_name_val if staff_name_val else "Pritam"),
-                "report_no": str(report_ref)
-            }
-            try:
-                res = requests.post(WEB_APP_URL, json=payload, timeout=8)
-                if res.status_code == 200:
-                    synced_count += 1
-            except Exception as e:
-                print(f"Expense Sync Error: {e}")
+                "remarks": str(row.get("Remarks", ""))
+            })
 
-    # 3. Sync Staff Advances to 'Staff Advances' Tab
+    # 3. Prepare Advances Payload
+    staff_list = []
     for _, row in staff_df.iterrows():
         p_name = str(row.get("Staff / Personnel Name", "")).strip()
         amt = float(row.get("Amount (Rs.)", 0))
         if p_name and p_name != "nan" and amt > 0:
-            payload = {
-                "target": "advances",
-                "date": str(date_val),
+            staff_list.append({
                 "personnel_name": p_name,
                 "purpose": str(row.get("Purpose / Details", "Advance")),
                 "type": str(row.get("Payment Type", "Staff Advance")),
                 "amount": amt,
-                "staff_name": str(staff_name_val if staff_name_val else "Pritam"),
-                "report_no": str(report_ref)
-            }
-            try:
-                res = requests.post(WEB_APP_URL, json=payload, timeout=8)
-                if res.status_code == 200:
-                    synced_count += 1
-            except Exception as e:
-                print(f"Advances Sync Error: {e}")
+                "remarks": str(row.get("Remarks", ""))
+            })
 
-    return synced_count
+    total_records = len(sales_list) + len(office_list) + len(staff_list)
+    if total_records == 0:
+        st.warning("⚠️ No valid rows found in Sales, Expenses, or Staff Advances to sync.")
+        return True, 0
+
+    master_payload = {
+        "date": str(date_val),
+        "report_no": str(report_ref),
+        "staff_name": str(staff_name_val if staff_name_val else "Pritam Gupta"),
+        "sales": sales_list,
+        "expenses": office_list,
+        "advances": staff_list
+    }
+
+    try:
+        # allow_redirects=True is required for Google Apps Script 302 redirects
+        response = requests.post(WEB_APP_URL, json=master_payload, timeout=25, allow_redirects=True)
+        
+        if response.status_code == 200:
+            try:
+                res_json = response.json()
+                if res_json.get("status") == "success":
+                    return True, res_json.get("records_synced", total_records)
+                else:
+                    st.error(f"⚠️ Google Script Error: {res_json.get('message')}")
+                    return False, 0
+            except Exception:
+                # Script succeeded without returning JSON body
+                return True, total_records
+        else:
+            st.error(f"❌ Google Server responded with status code: {response.status_code}")
+            return False, 0
+
+    except requests.exceptions.Timeout:
+        st.error("⏳ Connection timed out. Please check your internet or retry.")
+        return False, 0
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ Network Error connecting to Google Sheets: {e}")
+        return False, 0
 
 # =========================================================
 # PAGE CONFIGURATION & LOGIN
@@ -165,32 +182,55 @@ else:
             if not isinstance(d, (date, datetime)): d = date.today()
             bs = nepali_datetime.date.from_datetime_date(d)
             return f"{bs.year:04d}-{bs.month:02d}-{bs.day:02d} B.S."
-        except: return "2083-07-04 B.S."
+        except Exception:
+            return "B.S. Date (Nepali-Datetime module active)"
 
     def generate_report_no(d):
         if not isinstance(d, (date, datetime)): d = date.today()
         return f"ALP-{d.strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
     def blank_sales():
-        return pd.DataFrame([{"Client / Party Name": "", "Goods / Product Name": "", "Qty": 0.0, "FOC Qty": 0.0, "Sale Rate (Rs.)": 0.0, "Cash Collected (Rs.)": 0.0, "Credit Given (Rs.)": 0.0, "Client Address": "", "Invoice No.": ""}])
+        return pd.DataFrame([{
+            "Invoice No.": "INV-01",
+            "Client / Party Name": "",
+            "Client Address": "Birgunj",
+            "Goods / Product Name": "",
+            "Qty": 0.0,
+            "FOC Qty": 0.0,
+            "Sale Rate (Rs.)": 0.0,
+            "Cash Collected (Rs.)": 0.0,
+            "Credit Given (Rs.)": 0.0
+        }])
 
     def blank_office():
-        return pd.DataFrame([{"Expense Details": "", "Paid To / Vendor": "", "Payment Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
+        return pd.DataFrame([{
+            "Expense Details": "",
+            "Paid To / Vendor": "",
+            "Payment Mode": "Cash",
+            "Amount (Rs.)": 0.0,
+            "Remarks": ""
+        }])
 
     def blank_staff():
-        return pd.DataFrame([{"Staff / Personnel Name": "", "Purpose / Details": "", "Payment Type": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
+        return pd.DataFrame([{
+            "Staff / Personnel Name": "",
+            "Purpose / Details": "",
+            "Payment Type": "Staff Advance",
+            "Amount (Rs.)": 0.0,
+            "Remarks": ""
+        }])
 
     def numeric_columns(df, columns):
         df = df.copy()
         for col in columns:
-            if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            if col in df.columns: 
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         return df
 
     if "form_id" not in st.session_state: st.session_state["form_id"] = 1
     if "sales_base" not in st.session_state: st.session_state["sales_base"] = blank_sales()
     if "office_base" not in st.session_state: st.session_state["office_base"] = blank_office()
     if "staff_base" not in st.session_state: st.session_state["staff_base"] = blank_staff()
-    if "previous_dues" not in st.session_state: st.session_state["previous_dues"] = {}
     if "report_date" not in st.session_state: st.session_state["report_date"] = date.today()
     if "report_no" not in st.session_state: st.session_state["report_no"] = generate_report_no(date.today())
 
@@ -207,16 +247,27 @@ else:
         selected_date = st.date_input("Date (A.D.)", value=st.session_state.get("report_date", date.today()))
         st.session_state["report_date"] = selected_date
         st.caption(f"🇳🇵 **Miti (B.S.):** `{nepali_date(selected_date)}`")
-    with c2: staff_name = st.text_input("MR / Staff Name", placeholder="e.g. Pritam Gupta")
-    with c3: route = st.text_input("Route / Area Covered", placeholder="e.g. Birgunj To Lautan")
-    with c4: st.text_input("Report Reference No.", value=st.session_state.get("report_no", ""), disabled=True)
+    with c2: 
+        staff_name = st.text_input("MR / Staff Name", placeholder="e.g. Pritam Gupta")
+    with c3: 
+        route = st.text_input("Route / Area Covered", placeholder="e.g. Birgunj To Lautan")
+    with c4: 
+        st.text_input("Report Reference No.", value=st.session_state.get("report_no", ""), disabled=True)
 
     st.divider()
 
     with st.form("daily_report_form"):
         st.subheader("1. Sales & Cash Collections Grid")
         current_form_id = st.session_state["form_id"]
-        raw_sales = st.data_editor(st.session_state["sales_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"sales_editor_{current_form_id}")
+        
+        raw_sales = st.data_editor(
+            st.session_state["sales_base"], 
+            num_rows="dynamic", 
+            hide_index=True, 
+            use_container_width=True, 
+            key=f"sales_editor_{current_form_id}"
+        )
+        
         sales = numeric_columns(raw_sales, ["Qty", "FOC Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)", "Credit Given (Rs.)"])
         computed_bill = sales["Qty"] * sales["Sale Rate (Rs.)"]
         sales["Credit Given (Rs.)"] = (computed_bill - sales["Cash Collected (Rs.)"]).clip(lower=0.0)
@@ -229,13 +280,25 @@ else:
         col_exp_1, col_exp_2 = st.columns(2)
         with col_exp_1:
             st.subheader("2. Operating / Office Expenses")
-            raw_office = st.data_editor(st.session_state["office_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"office_editor_{current_form_id}")
+            raw_office = st.data_editor(
+                st.session_state["office_base"], 
+                num_rows="dynamic", 
+                hide_index=True, 
+                use_container_width=True, 
+                key=f"office_editor_{current_form_id}"
+            )
             office = numeric_columns(raw_office, ["Amount (Rs.)"])
             office_total = float(office["Amount (Rs.)"].sum())
 
         with col_exp_2:
             st.subheader("3. Staff Advances")
-            raw_staff = st.data_editor(st.session_state["staff_base"], num_rows="dynamic", hide_index=True, use_container_width=True, key=f"staff_editor_{current_form_id}")
+            raw_staff = st.data_editor(
+                st.session_state["staff_base"], 
+                num_rows="dynamic", 
+                hide_index=True, 
+                use_container_width=True, 
+                key=f"staff_editor_{current_form_id}"
+            )
             staff = numeric_columns(raw_staff, ["Amount (Rs.)"])
             staff_total = float(staff["Amount (Rs.)"].sum())
 
@@ -294,26 +357,57 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-        def create_pdf():
+        def create_pdf(rep_no, dt, name, rt, s_df, o_df, st_df, t_sale, t_cash, net_c):
             buffer = BytesIO()
-            doc = SimpleDocTemplate(buffer, pagesize=landscape(A4))
+            doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
             styles = getSampleStyleSheet()
-            story = [Paragraph("<b>ALPINE HERBS PVT. LTD.</b>", styles["Title"])]
+            title_style = ParagraphStyle(name="ReportTitle", parent=styles["Heading1"], fontSize=16, leading=20, textColor=colors.HexColor("#0D2818"))
+            meta_style = ParagraphStyle(name="MetaStyle", parent=styles["Normal"], fontSize=9, leading=12)
+
+            story = [
+                Paragraph("<b>ALPINE HERBS PVT. LTD. — DAILY FIELD CLOSING REPORT</b>", title_style),
+                Paragraph(f"<b>Report No:</b> {rep_no} | <b>Date:</b> {dt} | <b>Staff:</b> {name} | <b>Route:</b> {rt}", meta_style),
+                Spacer(1, 4*mm)
+            ]
+
+            # Summary Table
+            summary_data = [
+                ["Total Sales Billed", "Gross Cash Collected", "Total Expenses", "Net Cash In Hand"],
+                [money(t_sale), money(t_cash), money(office_total + staff_total), money(net_c)]
+            ]
+            t = Table(summary_data, colWidths=[65*mm, 65*mm, 65*mm, 65*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#164E33")),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+            ]))
+            story.append(t)
             doc.build(story)
             return buffer.getvalue()
 
         st.divider()
-        submitted = st.form_submit_button("🚀 FINAL GENERATE & SYNC TO MASTER", use_container_width=True)
+        submitted = st.form_submit_button("🚀 FINAL GENERATE & SYNC TO MASTER", type="primary", use_container_width=True)
 
         if submitted:
-            with st.spinner("Syncing Sales, Expenses, and Staff Advances..."):
-                pdf_bytes = create_pdf()
-                current_locked_ref = st.session_state.get('report_no', 'ALP')
-                synced_count = sync_all_data_to_google_sheet(valid_sales, office, staff, staff_name, current_locked_ref, selected_date)
-                st.session_state["submitted_pdf"] = pdf_bytes
-                st.balloons()
-                st.success(f"✅ Report `{current_locked_ref}` synced! ({synced_count} records posted across Sales, Expenses, and Staff Advances tabs)")
-                reset_form_to_blank()
+            current_locked_ref = st.session_state.get('report_no', 'ALP')
+            with st.spinner("⏳ Syncing Sales, Expenses, and Staff Advances to Google Sheet Master..."):
+                pdf_bytes = create_pdf(
+                    current_locked_ref, selected_date, staff_name, route, 
+                    valid_sales, office, staff, total_sales, total_cash, net_cash
+                )
+                success, count = sync_all_data_to_google_sheet(
+                    valid_sales, office, staff, staff_name, current_locked_ref, selected_date
+                )
+
+                if success:
+                    st.session_state["submitted_pdf"] = pdf_bytes
+                    st.session_state["submitted_filename"] = f"{current_locked_ref}.pdf"
+                    st.balloons()
+                    st.success(f"✅ Successfully synced {count} records to Google Sheet under Report Reference: `{current_locked_ref}`")
+                    reset_form_to_blank()
 
     with st.sidebar:
         st.header("⚙️ Controls")
