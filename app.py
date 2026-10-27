@@ -21,7 +21,7 @@ USERS = {
     "Manager": "Alpine@Birgunj"
 }
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzHoX4Yjzfx42iAuw2RGW29LRH-Mjq2L5h4-bPHqztR8GHfzHCMDF5m7pr20rheTVFn/exec"
 
 # =========================================================
 # 2. CLIENT MASTER DATABASE (BARA & PARSA LEDGER)
