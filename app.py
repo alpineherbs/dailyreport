@@ -9,251 +9,267 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import getSampleStyleSheet
 
 # =========================================================
-# 1. USER AUTHENTICATION & ACCESS CONTROL (EDIT USERS HERE)
+# 1. CREDENTIALS & GOOGLE WEBHOOK URL
 # =========================================================
-AUTHORIZED_USERS = {
+USERS = {
     "Alpine": "AHP@123",
     "Pritam": "Pritam@2024",
     "Admin": "AlpineAdmin@123",
     "Manager": "Alpine@Birgunj"
 }
 
-# =========================================================
-# 2. GOOGLE APPS SCRIPT WEB APP LINK
-# =========================================================
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
-def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
-    if not WEB_APP_URL or not str(WEB_APP_URL).startswith("http"):
-        st.error("Google Apps Script URL is empty or invalid.")
+# =========================================================
+# 2. GOOGLE SHEET SYNC (BATCH TRANSMISSION)
+# =========================================================
+def sync_to_sheets(s_df, o_df, st_df, mr_name, rep_ref, rep_date):
+    if not WEB_APP_URL.startswith("http"):
+        st.error("Google Web App URL is invalid.")
         return False, 0
 
-    sales_list = []
-    for _, row in sales_df.iterrows():
-        c_name = str(row.get("Client / Party Name", "")).strip()
-        p_name = str(row.get("Goods / Product Name", "")).strip()
-        qty_val = float(row.get("Qty", 0.0) or 0.0)
-        rate_val = float(row.get("Sale Rate (Rs.)", 0.0) or 0.0)
-        cash_val = float(row.get("Cash Collected (Rs.)", 0.0) or 0.0)
-        credit_val = float(row.get("Credit Given (Rs.)", 0.0) or 0.0)
-        total_val = float(row.get("Total Sale (Rs.)", 0.0) or 0.0)
-
-        if qty_val > 0 or cash_val > 0 or credit_val > 0 or total_val > 0 or (p_name and p_name != "nan"):
-            sales_list.append({
-                "invoice": str(row.get("Invoice No.", "INV-01")),
-                "client_name": c_name if c_name and c_name != "nan" else "Walk-in Party",
-                "address": str(row.get("Client Address", "Birgunj")),
-                "product_name": p_name if p_name and p_name != "nan" else "General Stock",
-                "qty": qty_val,
-                "rate": rate_val,
-                "cash_collected": cash_val,
-                "credit_given": credit_val,
-                "total_sale": total_val
+    sales_items = []
+    for _, r in s_df.iterrows():
+        qty = float(r.get("Qty", 0.0) or 0.0)
+        rate = float(r.get("Rate (Rs.)", 0.0) or 0.0)
+        cash = float(r.get("Cash Recd (Rs.)", 0.0) or 0.0)
+        credit = float(r.get("Credit Bal (Rs.)", 0.0) or 0.0)
+        tot = float(r.get("Total Sale (Rs.)", 0.0) or (qty * rate))
+        pname = str(r.get("Product Name", "")).strip()
+        cname = str(r.get("Client Name", "")).strip()
+        if qty > 0 or cash > 0 or credit > 0 or tot > 0 or pname:
+            sales_items.append({
+                "invoice": str(r.get("Invoice No.", "INV-01")),
+                "client_name": cname if cname else "Walk-in Party",
+                "address": str(r.get("Address", "Birgunj")),
+                "product_name": pname if pname else "General Stock",
+                "qty": qty, "rate": rate, "cash_collected": cash,
+                "credit_given": credit, "total_sale": tot
             })
 
-    office_list = []
-    for _, row in office_df.iterrows():
-        details = str(row.get("Expense Details", "")).strip()
-        amt = float(row.get("Amount (Rs.)", 0.0) or 0.0)
-        if details and details != "nan" and amt > 0:
-            office_list.append({
-                "details": details,
-                "paid_to": str(row.get("Paid To / Vendor", "Vendor")),
-                "mode": str(row.get("Payment Mode", "Cash")),
-                "amount": amt,
-                "remarks": str(row.get("Remarks", ""))
+    exp_items = []
+    for _, r in o_df.iterrows():
+        amt = float(r.get("Amount (Rs.)", 0.0) or 0.0)
+        det = str(r.get("Details", "")).strip()
+        if amt > 0 and det:
+            exp_items.append({
+                "details": det, "paid_to": str(r.get("Paid To", "Vendor")),
+                "mode": str(r.get("Mode", "Cash")), "amount": amt,
+                "remarks": str(r.get("Remarks", ""))
             })
 
-    staff_list = []
-    for _, row in staff_df.iterrows():
-        p_name = str(row.get("Staff / Personnel Name", "")).strip()
-        amt = float(row.get("Amount (Rs.)", 0.0) or 0.0)
-        if p_name and p_name != "nan" and amt > 0:
-            staff_list.append({
-                "personnel_name": p_name,
-                "purpose": str(row.get("Purpose / Details", "Advance")),
-                "type": str(row.get("Payment Type", "Staff Advance")),
-                "amount": amt,
-                "remarks": str(row.get("Remarks", ""))
+    adv_items = []
+    for _, r in st_df.iterrows():
+        amt = float(r.get("Amount (Rs.)", 0.0) or 0.0)
+        staff = str(r.get("Staff Name", "")).strip()
+        if amt > 0 and staff:
+            adv_items.append({
+                "personnel_name": staff, "purpose": str(r.get("Purpose", "Advance")),
+                "type": str(r.get("Category", "Staff Advance")), "amount": amt,
+                "remarks": str(r.get("Remarks", ""))
             })
 
-    total_records = len(sales_list) + len(office_list) + len(staff_list)
-    if total_records == 0:
-        st.warning("No valid rows found to sync.")
+    total_count = len(sales_items) + len(exp_items) + len(adv_items)
+    if total_count == 0:
+        st.warning("No entries found to sync.")
         return True, 0
 
-    master_payload = {
-        "date": str(date_val),
-        "report_no": str(report_ref),
-        "staff_name": str(staff_name_val if staff_name_val else "Field MR"),
-        "sales": sales_list,
-        "expenses": office_list,
-        "advances": staff_list
+    payload = {
+        "date": str(rep_date), "report_no": str(rep_ref), "staff_name": str(mr_name),
+        "sales": sales_items, "expenses": exp_items, "advances": adv_items
     }
-
     try:
-        response = requests.post(WEB_APP_URL, json=master_payload, timeout=25, allow_redirects=True)
-        if response.status_code == 200:
-            try:
-                res_json = response.json()
-                if res_json.get("status") == "success":
-                    return True, res_json.get("records_synced", total_records)
-                else:
-                    st.error("Google Script Error: " + str(res_json.get("message", "Unknown error")))
-                    return False, 0
-            except Exception:
-                return True, total_records
-        else:
-            st.error("Google Server HTTP Status: " + str(response.status_code))
-            return False, 0
-    except requests.exceptions.RequestException as e:
-        st.error("Network Error: " + str(e))
+        res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
+        return (True, total_count) if res.status_code == 200 else (False, 0)
+    except Exception as e:
+        st.error(f"Sync Connection Error: {e}")
         return False, 0
 
 # =========================================================
-# 3. PAGE INITIALIZATION & AUTHENTICATION
+# 3. AUTHENTICATION SCREEN
 # =========================================================
-st.set_page_config(page_title="ALPINE HERBS - Operations Portal", layout="wide")
+st.set_page_config(page_title="ALPINE HERBS - Daily Portal", layout="wide")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
-    st.session_state["current_user"] = ""
+    st.session_state["user"] = ""
 
 if not st.session_state["authenticated"]:
     st.title("ALPINE HERBS PVT. LTD.")
-    st.subheader("Field Operations & Closing Portal")
+    st.subheader("Medical Representative Daily Reporting Portal")
     st.divider()
-
-    c_pad1, c_box, c_pad2 = st.columns([1, 1.2, 1])
-    with c_box:
-        st.markdown("### Staff Sign In")
-        login_user = st.text_input("Username / MR Code", placeholder="e.g. Alpine or Pritam")
-        login_pass = st.text_input("Password", type="password", placeholder="Enter password")
-        st.write("")
-        if st.button("Login to Portal", type="primary", use_container_width=True):
-            user_clean = login_user.strip()
-            pass_clean = login_pass.strip()
-            if user_clean in AUTHORIZED_USERS and AUTHORIZED_USERS[user_clean] == pass_clean:
+    col1, col2, col3 = st.columns([1, 1.2, 1])
+    with col2:
+        u_in = st.text_input("Username", placeholder="e.g. Alpine or Pritam")
+        p_in = st.text_input("Password", type="password")
+        if st.button("Login", type="primary", use_container_width=True):
+            if u_in.strip() in USERS and USERS[u_in.strip()] == p_in.strip():
                 st.session_state["authenticated"] = True
-                st.session_state["current_user"] = user_clean
+                st.session_state["user"] = u_in.strip()
                 st.rerun()
             else:
                 st.error("Invalid username or password.")
     st.stop()
 
 # =========================================================
-# 4. APP HELPERS & DATA CACHE
+# 4. APP STATE & MASTER DATA
 # =========================================================
-logged_user = st.session_state.get("current_user", "Staff")
+cur_user = st.session_state.get("user", "Staff")
 
 def money(val):
-    try:
-        return "Rs. {:,.2f}".format(float(val or 0.0))
-    except Exception:
-        return "Rs. 0.00"
+    return f"Rs. {float(val or 0):,.2f}"
 
-def nepali_date(d):
-    try:
-        import nepali_datetime
-        if not isinstance(d, (date, datetime)):
-            d = date.today()
-        bs = nepali_datetime.date.from_datetime_date(d)
-        return "{:04d}-{:02d}-{:02d} B.S.".format(bs.year, bs.month, bs.day)
-    except Exception:
-        return "Nepali Calendar Active"
+def get_rep_no():
+    return f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
-def generate_report_no(d):
-    if not isinstance(d, (date, datetime)):
-        d = date.today()
-    return "ALP-" + d.strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:4].upper()
-
-def init_sales():
-    return pd.DataFrame([
-        {"Invoice No.": "INV-01", "Client / Party Name": "", "Client Address": "Birgunj", "Goods / Product Name": "", "Qty": 0.0, "Sale Rate (Rs.)": 0.0, "Cash Collected (Rs.)": 0.0},
-        {"Invoice No.": "INV-02", "Client / Party Name": "", "Client Address": "Birgunj", "Goods / Product Name": "", "Qty": 0.0, "Sale Rate (Rs.)": 0.0, "Cash Collected (Rs.)": 0.0}
+if "sales_df" not in st.session_state:
+    st.session_state["sales_df"] = pd.DataFrame([
+        {"Invoice No.": "INV-01", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0},
+        {"Invoice No.": "INV-02", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0}
     ])
-
-def init_office():
-    return pd.DataFrame([
-        {"Expense Details": "", "Paid To / Vendor": "Vendor", "Payment Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}
-    ])
-
-def init_staff():
-    return pd.DataFrame([
-        {"Staff / Personnel Name": "", "Purpose / Details": "Tour Advance", "Payment Type": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}
-    ])
-
-if "sales_data" not in st.session_state:
-    st.session_state["sales_data"] = init_sales()
-if "office_data" not in st.session_state:
-    st.session_state["office_data"] = init_office()
-if "staff_data" not in st.session_state:
-    st.session_state["staff_data"] = init_staff()
-if "report_date" not in st.session_state:
-    st.session_state["report_date"] = date.today()
-if "report_no" not in st.session_state:
-    st.session_state["report_no"] = generate_report_no(date.today())
-
-def reset_all_fields():
-    st.session_state["report_no"] = generate_report_no(st.session_state.get("report_date", date.today()))
-    st.session_state["sales_data"] = init_sales()
-    st.session_state["office_data"] = init_office()
-    st.session_state["staff_data"] = init_staff()
-    if "submitted_pdf" in st.session_state:
-        del st.session_state["submitted_pdf"]
+if "office_df" not in st.session_state:
+    st.session_state["office_df"] = pd.DataFrame([{"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
+if "staff_df" not in st.session_state:
+    st.session_state["staff_df"] = pd.DataFrame([{"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
+if "rep_no" not in st.session_state:
+    st.session_state["rep_no"] = get_rep_no()
 
 # =========================================================
-# 5. TOP HEADER & METADATA
+# 5. HEADER & LIVE FINANCIAL SUMMARY
 # =========================================================
 st.title("ALPINE HERBS PVT. LTD.")
-st.caption("Birgunj, Nepal | Medical Representative Daily Field Operations | Logged: " + logged_user)
+st.caption(f"Birgunj, Nepal | Daily Field Operations | Logged: {cur_user}")
 
-c1, c2, c3, c4 = st.columns([1.1, 1.3, 1.4, 1.1])
+c1, c2, c3, c4 = st.columns([1.2, 1.5, 1.5, 1.2])
 with c1:
-    selected_date = st.date_input("Date (A.D.)", value=st.session_state.get("report_date", date.today()))
-    st.session_state["report_date"] = selected_date
-    st.caption("Nepali Miti: " + nepali_date(selected_date))
+    rep_date = st.date_input("Date", value=date.today())
 with c2:
-    staff_name = st.text_input("MR / Representative Name", value=st.session_state.get("saved_mr_name", logged_user if logged_user != "Alpine" else "Pritam Gupta"))
-    st.session_state["saved_mr_name"] = staff_name
+    mr_name = st.text_input("MR Name", value=cur_user if cur_user != "Alpine" else "Pritam Gupta")
 with c3:
-    route = st.text_input("Territory / Route Covered", placeholder="e.g. Birgunj - Lautan - Kalaiya")
+    route_name = st.text_input("Route / Territory", placeholder="e.g. Birgunj - Lautan")
 with c4:
-    st.text_input("Report Reference No.", value=st.session_state.get("report_no", ""), disabled=True)
+    st.text_input("Report Ref", value=st.session_state["rep_no"], disabled=True)
 
+# LIVE MATH (Runs on every Tab / Enter keystroke)
+s_work = st.session_state["sales_df"].copy()
+for col in ["Qty", "Rate (Rs.)", "Cash Recd (Rs.)"]:
+    s_work[col] = pd.to_numeric(s_work[col], errors="coerce").fillna(0.0)
+
+s_work["Total Sale (Rs.)"] = s_work["Qty"] * s_work["Rate (Rs.)"]
+s_work["Credit Bal (Rs.)"] = (s_work["Total Sale (Rs.)"] - s_work["Cash Recd (Rs.)"]).clip(lower=0.0)
+
+o_work = st.session_state["office_df"].copy()
+o_work["Amount (Rs.)"] = pd.to_numeric(o_work["Amount (Rs.)"], errors="coerce").fillna(0.0)
+
+st_work = st.session_state["staff_df"].copy()
+st_work["Amount (Rs.)"] = pd.to_numeric(st_work["Amount (Rs.)"], errors="coerce").fillna(0.0)
+
+tot_sales = float(s_work["Total Sale (Rs.)"].sum())
+tot_cash = float(s_work["Cash Recd (Rs.)"].sum())
+tot_credit = float(s_work["Credit Bal (Rs.)"].sum())
+tot_exp = float(o_work["Amount (Rs.)"].sum())
+tot_adv = float(st_work["Amount (Rs.)"].sum())
+net_cash = tot_cash - (tot_exp + tot_adv)
+
+# REAL-TIME METRICS BAR
+st.write("##### Real-Time Closing Summary")
+k1, k2, k3, k4, k5, k6 = st.columns(6)
+k1.metric("Total Sales", money(tot_sales))
+k2.metric("Gross Cash", money(tot_cash))
+k3.metric("Credit Given", money(tot_credit))
+k4.metric("Expenses", money(tot_exp))
+k5.metric("Advances", money(tot_adv))
+k6.metric("Net In Hand", money(net_cash))
+
+st.divider()
+
+# =========================================================
+# 6. EXCEL-STYLE DATA GRIDS (TAB & ENTER KEYBOARD NAVIGATION)
+# =========================================================
+t1, t2, t3 = st.tabs(["1. Sales & Collections", "2. Office Expenses", "3. Staff Advances"])
+
+with t1:
+    st.caption("Press Tab to jump between columns, Enter to move down. Total & Credit calculate automatically.")
+    cfg_s = {
+        "Total Sale (Rs.)": st.column_config.NumberColumn("Total Billed", disabled=True, format="Rs. %.2f"),
+        "Credit Bal (Rs.)": st.column_config.NumberColumn("Credit Bal", disabled=True, format="Rs. %.2f")
+    }
+    ed_s = st.data_editor(s_work, column_config=cfg_s, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_s")
+    st.session_state["sales_df"] = ed_s[["Invoice No.", "Client Name", "Address", "Product Name", "Qty", "Rate (Rs.)", "Cash Recd (Rs.)"]]
+
+with t2:
+    ed_o = st.data_editor(o_work, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_o")
+    st.session_state["office_df"] = ed_o
+
+with t3:
+    ed_st = st.data_editor(st_work, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_st")
+    st.session_state["staff_df"] = ed_st
+
+# =========================================================
+# 7. PDF BUILDER
+# =========================================================
+def make_pdf():
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING REPORT</b>", styles["Heading1"]),
+        Paragraph(f"<b>Ref:</b> {st.session_state['rep_no']} | <b>Date:</b> {rep_date} | <b>Staff:</b> {mr_name} | <b>Route:</b> {route_name}", styles["Normal"]),
+        Spacer(1, 4*mm),
+        Table([
+            ["Total Sales Billed", "Credit Given", "Gross Cash Collected", "Total Expenses", "Net Cash In Hand"],
+            [money(tot_sales), money(tot_credit), money(tot_cash), money(tot_exp + tot_adv), money(net_cash)]
+        ], colWidths=[55*mm]*5, style=[
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#164E33")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+        ]),
+        Spacer(1, 6*mm),
+        Table([
+            ["\n____________________", "\n____________________", "\n____________________"],
+            ["Medical Representative (MR)", "Area Sales Manager", "Audit / Accounts"]
+        ], colWidths=[92*mm]*3, style=[('ALIGN', (0,0), (-1,-1), 'CENTER')])
+    ]
+    doc.build(story)
+    return buf.getvalue()
+
+# =========================================================
+# 8. SUBMIT & ACTIONS
+# =========================================================
 st.write("")
+b1, b2 = st.columns([3, 1])
+with b1:
+    if st.button("CONFIRM & SYNC REPORT TO MASTER", type="primary", use_container_width=True):
+        with st.spinner("Syncing to Google Sheets..."):
+            ok, count = sync_to_sheets(s_work, o_work, st_work, mr_name, st.session_state["rep_no"], rep_date)
+            if ok:
+                st.session_state["pdf"] = make_pdf()
+                st.success(f"Report {st.session_state['rep_no']} synced successfully ({count} rows logged)!")
 
-# =========================================================
-# 6. REAL-TIME DATA COMPUTATION
-# =========================================================
-sales_df = st.session_state["sales_data"].copy()
-for col in ["Qty", "Sale Rate (Rs.)", "Cash Collected (Rs.)"]:
-    sales_df[col] = pd.to_numeric(sales_df[col], errors="coerce").fillna(0.0)
+with b2:
+    if st.button("Reset Form", use_container_width=True):
+        st.session_state["rep_no"] = get_rep_no()
+        st.session_state["sales_df"] = s_work.iloc[0:0]
+        if "pdf" in st.session_state:
+            del st.session_state["pdf"]
+        st.rerun()
 
-computed_total = sales_df["Qty"] * sales_df["Sale Rate (Rs.)"]
-sales_df["Total Sale (Rs.)"] = computed_total
-sales_df["Credit Given (Rs.)"] = (computed_total - sales_df["Cash Collected (Rs.)"]).clip(lower=0.0)
+if "pdf" in st.session_state:
+    st.write("")
+    st.download_button(
+        "DOWNLOAD SIGNED PDF VOUCHER",
+        data=st.session_state["pdf"],
+        file_name=f"{st.session_state['rep_no']}.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
 
-office_df = st.session_state["office_data"].copy()
-office_df["Amount (Rs.)"] = pd.to_numeric(office_df["Amount (Rs.)"], errors="coerce").fillna(0.0)
-
-staff_df = st.session_state["staff_data"].copy()
-staff_df["Amount (Rs.)"] = pd.to_numeric(staff_df["Amount (Rs.)"], errors="coerce").fillna(0.0)
-
-total_sales_billed = float(sales_df["Total Sale (Rs.)"].sum())
-total_cash_collected = float(sales_df["Cash Collected (Rs.)"].sum())
-total_credit_given = float(sales_df["Credit Given (Rs.)"].sum())
-total_office_exp = float(office_df["Amount (Rs.)"].sum())
-total_staff_adv = float(staff_df["Amount (Rs.)"].sum())
-total_expenses_all = total_office_exp + total_staff_adv
-net_cash_in_hand = total_cash_collected - total_expenses_all
-
-# =========================================================
-# 7. LIVE REAL-TIME FINANCIAL SUMMARY BAR
-# =========================================================
-st.subheader("Financial Summary (Live Updates)")
-m1, m2, m3, m4, m5, m6 = st.columns(6)
-m1.metric("Total Sales Billed", m
+with st.sidebar:
+    st.write(f"Logged in as: **{cur_user}**")
+    if st.button("Sign Out", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
