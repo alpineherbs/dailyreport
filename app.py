@@ -35,11 +35,11 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     for _, row in sales_df.iterrows():
         c_name = str(row.get("Client / Party Name", "")).strip()
         p_name = str(row.get("Goods / Product Name", "")).strip()
-        qty_val = float(row.get("Qty", 0))
-        rate_val = float(row.get("Sale Rate (Rs.)", 0))
-        cash_val = float(row.get("Cash Collected (Rs.)", 0))
-        credit_val = float(row.get("Credit Given (Rs.)", 0))
-        total_val = float(row.get("Total Sale (Rs.)", 0))
+        qty_val = float(row.get("Qty", 0.0) or 0.0)
+        rate_val = float(row.get("Sale Rate (Rs.)", 0.0) or 0.0)
+        cash_val = float(row.get("Cash Collected (Rs.)", 0.0) or 0.0)
+        credit_val = float(row.get("Credit Given (Rs.)", 0.0) or 0.0)
+        total_val = float(row.get("Total Sale (Rs.)", 0.0) or 0.0)
 
         if qty_val > 0 or cash_val > 0 or credit_val > 0 or total_val > 0 or (p_name and p_name != "nan"):
             sales_list.append({
@@ -57,7 +57,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     office_list = []
     for _, row in office_df.iterrows():
         details = str(row.get("Expense Details", "")).strip()
-        amt = float(row.get("Amount (Rs.)", 0))
+        amt = float(row.get("Amount (Rs.)", 0.0) or 0.0)
         if details and details != "nan" and amt > 0:
             office_list.append({
                 "details": details,
@@ -70,7 +70,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
     staff_list = []
     for _, row in staff_df.iterrows():
         p_name = str(row.get("Staff / Personnel Name", "")).strip()
-        amt = float(row.get("Amount (Rs.)", 0))
+        amt = float(row.get("Amount (Rs.)", 0.0) or 0.0)
         if p_name and p_name != "nan" and amt > 0:
             staff_list.append({
                 "personnel_name": p_name,
@@ -116,7 +116,7 @@ def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val,
 # =========================================================
 # 3. PAGE INITIALIZATION & AUTHENTICATION
 # =========================================================
-st.set_page_config(page_title="ALPINE HERBS | Daily Operations Portal", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="ALPINE HERBS | Operations Portal", page_icon="🌿", layout="wide")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -125,7 +125,7 @@ if "authenticated" not in st.session_state:
 if not st.session_state["authenticated"]:
     st.markdown("""
     <div style="text-align: center; margin-top: 3rem; margin-bottom: 2rem;">
-        <h1 style="color: #0D2818; font-weight: 800; font-size: 2.3rem; margin-bottom: 0;">🌿 ALPINE HERBS PVT. LTD.</h1>
+        <h1 style="color: #0D2818; font-weight: 800; font-size: 2.2rem; margin-bottom: 0;">🌿 ALPINE HERBS PVT. LTD.</h1>
         <p style="color: #164E33; font-size: 1rem; font-weight: 600; letter-spacing: 0.5px;">
             PHARMACEUTICAL FIELD CLOSING & AUDIT SYSTEM (ISO GMP COMPLIANT)
         </p>
@@ -170,26 +170,30 @@ div[data-testid="stMetricValue"] { font-size: 1.25rem !important; font-weight: 8
 logged_user = st.session_state.get("current_user", "Staff")
 
 def money(value):
-    try: return f"Rs. {float(value or 0):,.2f}"
-    except: return "Rs. 0.00"
+    try:
+        return f"Rs. {float(value or 0):,.2f}"
+    except Exception:
+        return "Rs. 0.00"
 
 def nepali_date(d):
     try:
         import nepali_datetime
-        if not isinstance(d, (date, datetime)): d = date.today()
+        if not isinstance(d, (date, datetime)):
+            d = date.today()
         bs = nepali_datetime.date.from_datetime_date(d)
         return f"{bs.year:04d}-{bs.month:02d}-{bs.day:02d} B.S."
     except Exception:
         return "Nepali Calendar Active"
 
 def generate_report_no(d):
-    if not isinstance(d, (date, datetime)): d = date.today()
+    if not isinstance(d, (date, datetime)):
+        d = date.today()
     return f"ALP-{d.strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
 def init_sales():
     return pd.DataFrame([
         {"Invoice No.": "INV-01", "Client / Party Name": "", "Client Address": "Birgunj", "Goods / Product Name": "", "Qty": 0.0, "Sale Rate (Rs.)": 0.0, "Cash Collected (Rs.)": 0.0},
-        {"Invoice No.": "INV-02", "Client / Party Name": "", "Client Address": "Birgunj", "Goods / Product Name": "", "Qty": 0.0, "Sale Rate (Rs.)": 0.0, "Cash Collected (Rs.)": 0.0},
+        {"Invoice No.": "INV-02", "Client / Party Name": "", "Client Address": "Birgunj", "Goods / Product Name": "", "Qty": 0.0, "Sale Rate (Rs.)": 0.0, "Cash Collected (Rs.)": 0.0}
     ])
 
 def init_office():
@@ -202,21 +206,27 @@ def init_staff():
         {"Staff / Personnel Name": "", "Purpose / Details": "", "Payment Type": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}
     ])
 
-if "sales_data" not in st.session_state: st.session_state["sales_data"] = init_sales()
-if "office_data" not in st.session_state: st.session_state["office_data"] = init_office()
-if "staff_data" not in st.session_state: st.session_state["staff_data"] = init_staff()
-if "report_date" not in st.session_state: st.session_state["report_date"] = date.today()
-if "report_no" not in st.session_state: st.session_state["report_no"] = generate_report_no(date.today())
+if "sales_data" not in st.session_state:
+    st.session_state["sales_data"] = init_sales()
+if "office_data" not in st.session_state:
+    st.session_state["office_data"] = init_office()
+if "staff_data" not in st.session_state:
+    st.session_state["staff_data"] = init_staff()
+if "report_date" not in st.session_state:
+    st.session_state["report_date"] = date.today()
+if "report_no" not in st.session_state:
+    st.session_state["report_no"] = generate_report_no(date.today())
 
 def reset_all_fields():
     st.session_state["report_no"] = generate_report_no(st.session_state.get("report_date", date.today()))
     st.session_state["sales_data"] = init_sales()
     st.session_state["office_data"] = init_office()
     st.session_state["staff_data"] = init_staff()
-    if "submitted_pdf" in st.session_state: del st.session_state["submitted_pdf"]
+    if "submitted_pdf" in st.session_state:
+        del st.session_state["submitted_pdf"]
 
 # =========================================================
-# 5. TOP HEADER
+# 5. TOP HEADER & METADATA
 # =========================================================
 st.markdown(f"""
 <div class="brand-header">
@@ -284,29 +294,4 @@ m3.metric("Credit Given", money(total_credit_given))
 m4.metric("Operating Expenses", money(total_office_exp))
 m5.metric("Staff Advances", money(total_staff_adv))
 m6.metric(
-    "Net Cash In Hand", 
-    money(net_cash_in_hand), 
-    delta=f"{money(net_cash_in_hand)} Balance", 
-    delta_color="normal" if net_cash_in_hand >= 0 else "inverse"
-)
-
-if net_cash_in_hand < 0:
-    st.warning("⚠️ **Notice:** Total disbursements (expenses + advances) exceed cash collected today. Net Cash is negative.")
-
-st.divider()
-
-# =========================================================
-# 8. DATA ENTRY TABS (TAB & ENTER KEYBOARD NAVIGATION)
-# =========================================================
-tab_sales, tab_expenses, tab_advances = st.tabs([
-    "🛒 1. Sales & Collections Ledger",
-    "🏢 2. Operating / Office Expenses",
-    "👥 3. Staff Advances & Tour Imprest"
-])
-
-with tab_sales:
-    st.markdown('<div class="helper-tag">💡 <b>Fast Navigation:</b> Press <b>Tab</b> to move horizontally across cells; press <b>Enter</b> to save and move down a row. Computed columns are locked.</div>', unsafe_allow_html=True)
-    
-    sales_column_config = {
-        "Invoice No.": st.column_config.TextColumn("Invoice #", width="small", default="INV-01", required=True),
-        "Client / Party Name": st.col
+    "N
