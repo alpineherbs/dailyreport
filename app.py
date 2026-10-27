@@ -12,7 +12,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 
 # =========================================================
-# 1. CREDENTIALS & GOOGLE WEBHOOK URL
+# 1. USER ACCESS & GOOGLE SHEET WEBHOOK
 # =========================================================
 USERS = {
     "Alpine": "AHP@123",
@@ -24,74 +24,134 @@ USERS = {
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
 # =========================================================
-# 2. GOOGLE SHEET SYNC (BATCH TRANSMISSION)
+# 2. CLIENT MASTER DATABASE (BARA & PARSA LEDGER)
 # =========================================================
-def sync_to_sheets(s_df, o_df, st_df, mr_name, rep_ref, rep_date):
+CLIENT_DATABASE = [
+    {"code": "BAR-001", "name": "Naresh Medical", "area": "Kalaiya, Bara", "dues": 3070, "phone": "9807267001"},
+    {"code": "BAR-002", "name": "Mahir Health Clinic", "area": "Jeetpur, Bara", "dues": 7105, "phone": "9807100296"},
+    {"code": "BAR-003", "name": "Dev Medical", "area": "Kalaiya, Bara", "dues": 2030, "phone": "9845227985"},
+    {"code": "BAR-004", "name": "Nirajan Pharmacy", "area": "Bakuliya, Bara", "dues": 550, "phone": "9804242586"},
+    {"code": "BAR-005", "name": "Hariom Medical", "area": "Kolvi, Bara", "dues": 400, "phone": "9811229323"},
+    {"code": "BAR-006", "name": "S.K.S Pharma", "area": "Parsauni, Bara", "dues": 1175, "phone": ""},
+    {"code": "BAR-008", "name": "Rupa Medical", "area": "Simara, Bara", "dues": 4535, "phone": ""},
+    {"code": "BAR-009", "name": "Sanjeevani Clinic", "area": "Simara, Bara", "dues": 2195, "phone": "9845130209"},
+    {"code": "BAR-011", "name": "Alex Medical Surgical", "area": "Bagrampur, Bara", "dues": 4745, "phone": ""},
+    {"code": "BAR-012", "name": "Kaliyani Medical", "area": "Kolvi, Bara", "dues": 2025, "phone": ""},
+    {"code": "BAR-015", "name": "Roman Surgical", "area": "Khopawa, Bara", "dues": 1660, "phone": "9821231370"},
+    {"code": "BAR-016", "name": "Nimash Medical", "area": "Simara, Bara", "dues": 4620, "phone": "9845120836"},
+    {"code": "BAR-017", "name": "Advance Poli Clinic", "area": "Raghunathpur, Bara", "dues": 6510, "phone": "9809153231"},
+    {"code": "BAR-018", "name": "Pritvi Medical", "area": "Jaitapur, Bara", "dues": 3070, "phone": ""},
+    {"code": "PAR-002", "name": "Ashok Medical Hall", "area": "Naukatola, Parsa", "dues": 12230, "phone": ""},
+    {"code": "PAR-003", "name": "Alex Medical Hall", "area": "Bagrampur, Parsa", "dues": 18000, "phone": ""},
+    {"code": "PAR-004", "name": "Ali Health Clinic", "area": "Gunjabhawani, Parsa", "dues": 29040, "phone": ""},
+    {"code": "PAR-005", "name": "Alina Health Clinic", "area": "Kalaiya, Parsa", "dues": 8250, "phone": ""},
+    {"code": "PAR-006", "name": "Sudama Surgical", "area": "Neutan, Parsa", "dues": 20200, "phone": ""},
+    {"code": "PAR-007", "name": "B.s Health Clinic", "area": "Paterwa, Parsa", "dues": 24665, "phone": ""},
+    {"code": "PAR-008", "name": "Pandey Medical Hall", "area": "Badanihar, Parsa", "dues": 7065, "phone": ""},
+    {"code": "PAR-009", "name": "Bhawani Medical Hall", "area": "Bharatwa, Parsa", "dues": 9950, "phone": ""},
+    {"code": "PAR-011", "name": "Dinamik Pharma", "area": "Sano Sugauli, Parsa", "dues": 15815, "phone": ""},
+    {"code": "PAR-015", "name": "Ganesh Srestha", "area": "Birgunj, Parsa", "dues": 63390, "phone": ""},
+    {"code": "PAR-016", "name": "Hariom medical Hall", "area": "Kolbi, Parsa", "dues": 2300, "phone": ""},
+    {"code": "PAR-017", "name": "Harnaiya Aashirvad Medical", "area": "Harnaiya, Parsa", "dues": 4565, "phone": ""},
+    {"code": "PAR-019", "name": "Kaliyani Medical Hall", "area": "Kolbi, Parsa", "dues": 15580, "phone": ""},
+    {"code": "PAR-031", "name": "Rihansh Medical Hall", "area": "Birgunj, Parsa", "dues": 1740, "phone": ""},
+    {"code": "PAR-032", "name": "Roshan Pharmacy", "area": "Birgunj, Parsa", "dues": 74290, "phone": ""},
+    {"code": "PAR-033", "name": "Rupa Medical Hall", "area": "Simra, Parsa", "dues": 5515, "phone": ""},
+    {"code": "PAR-035", "name": "Sandip Medical Hall", "area": "Langada Chouk, Parsa", "dues": 30195, "phone": ""},
+    {"code": "PAR-036", "name": "Sanniya Medical Hall", "area": "Jeetpur, Parsa", "dues": 3460, "phone": ""},
+    {"code": "PAR-037", "name": "Sohil Medical Hall", "area": "Pokhariya, Parsa", "dues": 11600, "phone": ""},
+    {"code": "PAR-038", "name": "Shohalal Medical Hall", "area": "Gunjabhawani, Parsa", "dues": 7175, "phone": ""},
+    {"code": "PAR-040", "name": "Tarkeshwar Medical Hall", "area": "Nagwa, Parsa", "dues": 8885, "phone": ""},
+    {"code": "PAR-052", "name": "Mahir Health Clinic", "area": "Jeetpur, Parsa", "dues": 8165, "phone": ""},
+    {"code": "PAR-056", "name": "OM Shivsakti Pharmacy", "area": "Kalaiya, Parsa", "dues": 3680, "phone": ""},
+    {"code": "REC-001", "name": "Aarabh Pharmacy (Bad Debt)", "area": "Nijagar", "dues": 36725, "phone": "9855019764"},
+    {"code": "REC-002", "name": "Aarabh Pharmacy Narayani", "area": "Nijagar", "dues": 25915, "phone": "9855019764"}
+]
+
+# =========================================================
+# 3. GOOGLE SHEET SYNC (TRANSMITS EDITED DATA DIRECTLY)
+# =========================================================
+def sync_to_sheets(sales_df, office_df, staff_df, mr_name, rep_ref, rep_date):
     if not WEB_APP_URL.startswith("http"):
         st.error("Google Web App URL is invalid.")
         return False, 0
 
-    sales_items = []
-    for _, r in s_df.iterrows():
+    sales_payload = []
+    for _, r in sales_df.iterrows():
         qty = float(r.get("Qty", 0.0) or 0.0)
         rate = float(r.get("Rate (Rs.)", 0.0) or 0.0)
         cash = float(r.get("Cash Recd (Rs.)", 0.0) or 0.0)
-        credit = float(r.get("Credit Bal (Rs.)", 0.0) or 0.0)
-        tot = float(r.get("Total Sale (Rs.)", 0.0) or (qty * rate))
+        tot = qty * rate
+        credit = max(0.0, tot - cash)
         pname = str(r.get("Product Name", "")).strip()
         cname = str(r.get("Client Name", "")).strip()
-        if qty > 0 or cash > 0 or credit > 0 or tot > 0 or pname:
-            sales_items.append({
-                "invoice": str(r.get("Invoice No.", "INV-01")),
+        addr = str(r.get("Address", "Birgunj")).strip()
+        inv = str(r.get("Invoice No.", "INV-01")).strip()
+
+        if qty > 0 or cash > 0 or (pname and pname != "nan") or (cname and cname != "nan"):
+            sales_payload.append({
+                "invoice": inv if inv else "INV-01",
                 "client_name": cname if cname else "Walk-in Party",
-                "address": str(r.get("Address", "Birgunj")),
+                "address": addr if addr else "Birgunj",
                 "product_name": pname if pname else "General Stock",
-                "qty": qty, "rate": rate, "cash_collected": cash,
-                "credit_given": credit, "total_sale": tot
+                "qty": qty,
+                "rate": rate,
+                "cash_collected": cash,
+                "credit_given": credit,
+                "total_sale": tot
             })
 
-    exp_items = []
-    for _, r in o_df.iterrows():
+    exp_payload = []
+    for _, r in office_df.iterrows():
         amt = float(r.get("Amount (Rs.)", 0.0) or 0.0)
         det = str(r.get("Details", "")).strip()
-        if amt > 0 and det:
-            exp_items.append({
-                "details": det, "paid_to": str(r.get("Paid To", "Vendor")),
-                "mode": str(r.get("Mode", "Cash")), "amount": amt,
-                "remarks": str(r.get("Remarks", ""))
+        if amt > 0 or (det and det != "nan"):
+            exp_payload.append({
+                "details": det if det else "Route Expense",
+                "paid_to": str(r.get("Paid To", "Vendor")).strip() or "Vendor",
+                "mode": str(r.get("Mode", "Cash")).strip() or "Cash",
+                "amount": amt,
+                "remarks": str(r.get("Remarks", "")).strip()
             })
 
-    adv_items = []
-    for _, r in st_df.iterrows():
+    adv_payload = []
+    for _, r in staff_df.iterrows():
         amt = float(r.get("Amount (Rs.)", 0.0) or 0.0)
         staff = str(r.get("Staff Name", "")).strip()
-        if amt > 0 and staff:
-            adv_items.append({
-                "personnel_name": staff, "purpose": str(r.get("Purpose", "Advance")),
-                "type": str(r.get("Category", "Staff Advance")), "amount": amt,
-                "remarks": str(r.get("Remarks", ""))
+        if amt > 0 or (staff and staff != "nan"):
+            adv_payload.append({
+                "personnel_name": staff if staff else "Staff",
+                "purpose": str(r.get("Purpose", "Tour Advance")).strip() or "Tour Advance",
+                "type": str(r.get("Category", "Staff Advance")).strip() or "Staff Advance",
+                "amount": amt,
+                "remarks": str(r.get("Remarks", "")).strip()
             })
 
-    total_count = len(sales_items) + len(exp_items) + len(adv_items)
-    if total_count == 0:
+    total_records = len(sales_payload) + len(exp_payload) + len(adv_payload)
+    if total_records == 0:
         st.warning("No entries found to sync.")
         return True, 0
 
-    payload = {
-        "date": str(rep_date), "report_no": str(rep_ref), "staff_name": str(mr_name),
-        "sales": sales_items, "expenses": exp_items, "advances": adv_items
+    master_payload = {
+        "date": str(rep_date),
+        "report_no": str(rep_ref),
+        "staff_name": str(mr_name),
+        "sales": sales_payload,
+        "expenses": exp_payload,
+        "advances": adv_payload
     }
+
     try:
-        res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
-        return (True, total_count) if res.status_code == 200 else (False, 0)
+        res = requests.post(WEB_APP_URL, json=master_payload, timeout=25, allow_redirects=True)
+        return (True, total_records) if res.status_code == 200 else (False, 0)
     except Exception as e:
         st.error(f"Sync Connection Error: {e}")
         return False, 0
 
 # =========================================================
-# 3. AUTHENTICATION SCREEN
+# 4. AUTHENTICATION
 # =========================================================
-st.set_page_config(page_title="ALPINE HERBS - Daily Portal", layout="wide")
+st.set_page_config(page_title="ALPINE HERBS - Operations Portal", layout="wide")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -115,33 +175,39 @@ if not st.session_state["authenticated"]:
     st.stop()
 
 # =========================================================
-# 4. APP STATE & MASTER DATA
+# 5. TEMPLATES & PERSISTENT SESSION
 # =========================================================
 cur_user = st.session_state.get("user", "Staff")
 
 def money(val):
-    return f"Rs. {float(val or 0):,.2f}"
+    return "Rs. {:,.2f}".format(float(val or 0.0))
 
 def get_rep_no():
-    return f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+    return "ALP-" + datetime.now().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:4].upper()
 
-if "sales_df" not in st.session_state:
-    st.session_state["sales_df"] = pd.DataFrame([
-        {"Invoice No.": "INV-01", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0},
-        {"Invoice No.": "INV-02", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0}
-    ])
-if "office_df" not in st.session_state:
-    st.session_state["office_df"] = pd.DataFrame([{"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
-if "staff_df" not in st.session_state:
-    st.session_state["staff_df"] = pd.DataFrame([{"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
 if "rep_no" not in st.session_state:
     st.session_state["rep_no"] = get_rep_no()
 
+# Initial Templates (Clean, unchanging base data)
+INIT_SALES = pd.DataFrame([
+    {"Invoice No.": "INV-01", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0},
+    {"Invoice No.": "INV-02", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0},
+    {"Invoice No.": "INV-03", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0}
+])
+
+INIT_OFFICE = pd.DataFrame([
+    {"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}
+])
+
+INIT_STAFF = pd.DataFrame([
+    {"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}
+])
+
 # =========================================================
-# 5. HEADER & LIVE FINANCIAL SUMMARY
+# 6. HEADER & METADATA
 # =========================================================
 st.title("ALPINE HERBS PVT. LTD.")
-st.caption(f"Birgunj, Nepal | Daily Field Operations | Logged: {cur_user}")
+st.caption(f"Birgunj, Nepal | Field Operations Portal | Logged as: {cur_user}")
 
 c1, c2, c3, c4 = st.columns([1.2, 1.5, 1.5, 1.2])
 with c1:
@@ -149,67 +215,84 @@ with c1:
 with c2:
     mr_name = st.text_input("MR Name", value=cur_user if cur_user != "Alpine" else "Pritam Gupta")
 with c3:
-    route_name = st.text_input("Route / Territory", placeholder="e.g. Birgunj - Lautan")
+    route_name = st.text_input("Route / Territory", placeholder="e.g. Birgunj - Kalaiya")
 with c4:
     st.text_input("Report Ref", value=st.session_state["rep_no"], disabled=True)
 
-# LIVE MATH (Runs on every Tab / Enter keystroke)
-s_work = st.session_state["sales_df"].copy()
-for col in ["Qty", "Rate (Rs.)", "Cash Recd (Rs.)"]:
-    s_work[col] = pd.to_numeric(s_work[col], errors="coerce").fillna(0.0)
-
-s_work["Total Sale (Rs.)"] = s_work["Qty"] * s_work["Rate (Rs.)"]
-s_work["Credit Bal (Rs.)"] = (s_work["Total Sale (Rs.)"] - s_work["Cash Recd (Rs.)"]).clip(lower=0.0)
-
-o_work = st.session_state["office_df"].copy()
-o_work["Amount (Rs.)"] = pd.to_numeric(o_work["Amount (Rs.)"], errors="coerce").fillna(0.0)
-
-st_work = st.session_state["staff_df"].copy()
-st_work["Amount (Rs.)"] = pd.to_numeric(st_work["Amount (Rs.)"], errors="coerce").fillna(0.0)
-
-tot_sales = float(s_work["Total Sale (Rs.)"].sum())
-tot_cash = float(s_work["Cash Recd (Rs.)"].sum())
-tot_credit = float(s_work["Credit Bal (Rs.)"].sum())
-tot_exp = float(o_work["Amount (Rs.)"].sum())
-tot_adv = float(st_work["Amount (Rs.)"].sum())
-net_cash = tot_cash - (tot_exp + tot_adv)
-
-# REAL-TIME METRICS BAR
-st.write("##### Real-Time Closing Summary")
-k1, k2, k3, k4, k5, k6 = st.columns(6)
-k1.metric("Total Sales", money(tot_sales))
-k2.metric("Gross Cash", money(tot_cash))
-k3.metric("Credit Given", money(tot_credit))
-k4.metric("Expenses", money(tot_exp))
-k5.metric("Advances", money(tot_adv))
-k6.metric("Net In Hand", money(net_cash))
-
-st.divider()
+# Top Summary Container (Receives live updates)
+summary_placeholder = st.container()
 
 # =========================================================
-# 6. EXCEL-STYLE DATA GRIDS (TAB & ENTER KEYBOARD NAVIGATION)
+# 7. EXCEL-STYLE DATA GRIDS (TAB & ENTER FULLY ENABLED)
 # =========================================================
 t1, t2, t3 = st.tabs(["1. Sales & Collections", "2. Office Expenses", "3. Staff Advances"])
 
 with t1:
-    st.caption("Press Tab to jump between columns, Enter to move down. Total & Credit calculate automatically.")
-    cfg_s = {
-        "Total Sale (Rs.)": st.column_config.NumberColumn("Total Billed", disabled=True, format="Rs. %.2f"),
-        "Credit Bal (Rs.)": st.column_config.NumberColumn("Credit Bal", disabled=True, format="Rs. %.2f")
-    }
-    ed_s = st.data_editor(s_work, column_config=cfg_s, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_s")
-    st.session_state["sales_df"] = ed_s[["Invoice No.", "Client Name", "Address", "Product Name", "Qty", "Rate (Rs.)", "Cash Recd (Rs.)"]]
+    st.caption("Press Tab to jump between columns, Enter to move down rows. Changes reflect at the top in real time.")
+    edited_sales = st.data_editor(
+        INIT_SALES,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key="ed_s"
+    )
 
 with t2:
-    ed_o = st.data_editor(o_work, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_o")
-    st.session_state["office_df"] = ed_o
+    st.caption("Record daily operational, transport, and vendor costs.")
+    edited_office = st.data_editor(
+        INIT_OFFICE,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key="ed_o"
+    )
 
 with t3:
-    ed_st = st.data_editor(st_work, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_st")
-    st.session_state["staff_df"] = ed_st
+    st.caption("Record field allowances, per-diem, and staff advances.")
+    edited_staff = st.data_editor(
+        INIT_STAFF,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key="ed_st"
+    )
 
 # =========================================================
-# 7. PDF BUILDER
+# 8. REAL-TIME TOTALS CALCULATION
+# =========================================================
+s_qty = pd.to_numeric(edited_sales["Qty"], errors="coerce").fillna(0.0)
+s_rate = pd.to_numeric(edited_sales["Rate (Rs.)"], errors="coerce").fillna(0.0)
+s_cash = pd.to_numeric(edited_sales["Cash Recd (Rs.)"], errors="coerce").fillna(0.0)
+s_totals = s_qty * s_rate
+s_credits = (s_totals - s_cash).clip(lower=0.0)
+
+tot_sales = float(s_totals.sum())
+tot_cash = float(s_cash.sum())
+tot_credit = float(s_credits.sum())
+
+o_amt = pd.to_numeric(edited_office["Amount (Rs.)"], errors="coerce").fillna(0.0)
+tot_exp = float(o_amt.sum())
+
+st_amt = pd.to_numeric(edited_staff["Amount (Rs.)"], errors="coerce").fillna(0.0)
+tot_adv = float(st_amt.sum())
+net_cash = tot_cash - (tot_exp + tot_adv)
+
+# Render Live Metrics into the top container
+with summary_placeholder:
+    st.write("##### Real-Time Closing Summary (Live)")
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Total Sales", money(tot_sales))
+    k2.metric("Gross Cash", money(tot_cash))
+    k3.metric("Credit Given", money(tot_credit))
+    k4.metric("Expenses", money(tot_exp))
+    k5.metric("Advances", money(tot_adv))
+    k6.metric("Net In Hand", money(net_cash))
+    if net_cash < 0:
+        st.warning("Notice: Expenses and advances exceed cash collected today. Net cash is negative.")
+    st.divider()
+
+# =========================================================
+# 9. PDF GENERATOR
 # =========================================================
 def make_pdf():
     buf = BytesIO()
@@ -238,24 +321,24 @@ def make_pdf():
     return buf.getvalue()
 
 # =========================================================
-# 8. SUBMIT & ACTIONS
+# 10. SUBMISSION & CONTROLS
 # =========================================================
 st.write("")
 b1, b2 = st.columns([3, 1])
 with b1:
     if st.button("CONFIRM & SYNC REPORT TO MASTER", type="primary", use_container_width=True):
-        with st.spinner("Syncing to Google Sheets..."):
-            ok, count = sync_to_sheets(s_work, o_work, st_work, mr_name, st.session_state["rep_no"], rep_date)
+        with st.spinner("Syncing data to Google Sheets..."):
+            ok, count = sync_to_sheets(edited_sales, edited_office, edited_staff, mr_name, st.session_state["rep_no"], rep_date)
             if ok:
                 st.session_state["pdf"] = make_pdf()
-                st.success(f"Report {st.session_state['rep_no']} synced successfully ({count} rows logged)!")
+                st.success(f"Report {st.session_state['rep_no']} synced successfully! ({count} records updated in Google Sheets)")
 
 with b2:
     if st.button("Reset Form", use_container_width=True):
         st.session_state["rep_no"] = get_rep_no()
-        st.session_state["sales_df"] = s_work.iloc[0:0]
-        if "pdf" in st.session_state:
-            del st.session_state["pdf"]
+        for k in ["ed_s", "ed_o", "ed_st", "pdf"]:
+            if k in st.session_state:
+                del st.session_state[k]
         st.rerun()
 
 if "pdf" in st.session_state:
@@ -268,7 +351,19 @@ if "pdf" in st.session_state:
         use_container_width=True
     )
 
+# =========================================================
+# 11. SIDEBAR: CLIENT DUES LOOKUP
+# =========================================================
 with st.sidebar:
+    st.subheader("Client Ledger & Dues Lookup")
+    search_q = st.text_input("Search Chemist or Town", placeholder="e.g. Naresh, Simara").strip().lower()
+    matches = [c for c in CLIENT_DATABASE if search_q in c['name'].lower() or search_q in c['area'].lower()] if search_q else CLIENT_DATABASE[:8]
+
+    for item in matches[:10]:
+        st.markdown(f"**{item['name']}** ({item['code']})")
+        st.caption(f"{item['area']} | Due: **Rs. {item['dues']:,}** {('| ' + item['phone']) if item['phone'] else ''}")
+        st.write("---")
+
     st.write(f"Logged in as: **{cur_user}**")
     if st.button("Sign Out", use_container_width=True):
         st.session_state["authenticated"] = False
