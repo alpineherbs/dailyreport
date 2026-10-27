@@ -15,7 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 # GOOGLE APPS SCRIPT WEB APP LINK FOR SHEET SYNC
 # =========================================================
 # Replace with your newly deployed Web App URL:
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyhV5JIH5EkDzukuq1szvOLOn0rG5-1OlyClJ-QR6DWOj9JaCGlxL0FfokPHx9MGkAd/exec"
 
 def sync_all_data_to_google_sheet(sales_df, office_df, staff_df, staff_name_val, report_ref, date_val):
     """
