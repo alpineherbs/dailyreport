@@ -5,7 +5,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", page_icon="🌿", layout="wide")
 
@@ -25,15 +25,18 @@ CLIENT_DATABASE = [
     {"code": "PAR-035", "name": "Sandip Medical Hall", "area": "Langada Chouk, Parsa", "dues": 30195}
 ]
 
+# Keep header visible so sidebar toggle arrow (>) is never hidden on other computers
 st.markdown("""<style>
-#MainMenu, footer, header { visibility: hidden; }
-.block-container { padding-top: 1rem; max-width: 1520px; }
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+.block-container { padding-top: 1.2rem; max-width: 1520px; }
 input::placeholder { color: #8FA698 !important; opacity: 1 !important; }
-.g-box { background: #F4FAF6; border: 1.5px solid #2D7D52; border-radius: 8px; padding: 12px; height: 100%; }
-.g-acc { background: #E7F5ED; border: 2px solid #164E33; border-radius: 8px; padding: 12px; height: 100%; }
-.s-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #C8DEC2; font-size: 0.9rem; }
+.g-box { background: #F4FAF6; border: 1.5px solid #2D7D52; border-radius: 8px; padding: 14px; height: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.03); }
+.g-acc { background: #E7F5ED; border: 2px solid #164E33; border-radius: 8px; padding: 14px; height: 100%; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.s-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #C8DEC2; font-size: 0.9rem; }
 .s-val { font-weight: 700; color: #0D2818; }
 .user-card { background: #EAF5EE; border-left: 4px solid #164E33; padding: 10px; border-radius: 4px; margin-bottom: 12px; }
+.brand-nav { background: linear-gradient(135deg, #0D2818 0%, #164E33 100%); padding: 12px 18px; border-radius: 8px; color: white; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 </style>""", unsafe_allow_html=True)
 
 if "authenticated" not in st.session_state:
@@ -41,19 +44,20 @@ if "authenticated" not in st.session_state:
     st.session_state["user"] = ""
 
 if not st.session_state["authenticated"]:
-    st.markdown("<h2 style='text-align:center; color:#0D2818; margin-top:2rem;'>🌿 ALPINE HERBS PVT. LTD.</h2><p style='text-align:center; color:#2D7D52;'>FIELD OPERATIONS PORTAL</p>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center; color:#0D2818; margin-top:2rem;'>🌿 ALPINE HERBS PVT. LTD.</h2><p style='text-align:center; color:#2D7D52; font-weight:600;'>MEDICAL REPRESENTATIVE DAILY FIELD CLOSING</p>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.1, 1])
     with c2:
         with st.container(border=True):
-            st.markdown("##### Staff Sign In")
+            st.markdown("##### 🔐 Staff Sign In")
             u = st.text_input("Username", placeholder="Username", label_visibility="collapsed")
             p = st.text_input("Password", type="password", placeholder="Password", label_visibility="collapsed")
-            if st.button("Sign In to Portal", type="primary", use_container_width=True):
+            st.write("")
+            if st.button("🔑 Sign In to Portal", type="primary", use_container_width=True):
                 if u.strip() in USERS and USERS[u.strip()] == p.strip():
                     st.session_state["authenticated"] = True
                     st.session_state["user"] = u.strip()
                     st.rerun()
-                else: st.error("Invalid Username or Password.")
+                else: st.error("❌ Invalid Username or Password.")
     st.stop()
 
 cur_user = st.session_state.get("user", "Staff")
@@ -61,6 +65,29 @@ money = lambda v: f"Rs. {float(v or 0):,.2f}"
 
 if "rep_no" not in st.session_state:
     st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
+
+# SIDEBAR: USER SESSION & CLIENT DIRECTORY
+with st.sidebar:
+    st.markdown("### 👤 User Session")
+    st.markdown(f"""<div class="user-card">
+    <b>Officer:</b> {cur_user}<br>
+    <b>Branch:</b> Birgunj, Nepal<br>
+    <b>Status:</b> 🟢 Online (Field Active)<br>
+    <b>Ref No:</b> <code>{st.session_state['rep_no']}</code>
+    </div>""", unsafe_allow_html=True)
+
+    if st.button("🔒 Logout / Sign Out", use_container_width=True, type="secondary"):
+        st.session_state["authenticated"] = False
+        st.session_state["user"] = ""
+        st.rerun()
+
+    st.divider()
+    st.markdown("### 📋 Client Ledger & Dues")
+    sq = st.text_input("Search Chemist or Town", placeholder="Search chemist or town").strip().lower()
+    matches = [c for c in CLIENT_DATABASE if sq in c['name'].lower() or sq in c['area'].lower()] if sq else CLIENT_DATABASE[:6]
+    for item in matches[:8]:
+        st.markdown(f"**{item['name']}** (`{item['code']}`)\n{item['area']} | Due: **Rs. {item['dues']:,}**")
+        st.write("---")
 
 INIT_SALES = pd.DataFrame([
     {"Invoice No.": "INV-01", "Client Name": "", "Address": "Birgunj", "Product Name": "", "Qty": 0.0, "Rate (Rs.)": 0.0, "Cash Recd (Rs.)": 0.0, "Credit Given (Rs.)": 0.0},
@@ -70,41 +97,9 @@ INIT_SALES = pd.DataFrame([
 INIT_OFFICE = pd.DataFrame([{"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
 INIT_STAFF = pd.DataFrame([{"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
 
-# SIDEBAR: USER INFO, LOGOUT & LIVE TEST
-with st.sidebar:
-    st.markdown("### 👤 User Session")
-    st.markdown(f"""<div class="user-card">
-    <b>Officer:</b> {cur_user}<br>
-    <b>Branch:</b> Birgunj, Nepal<br>
-    <b>Status:</b> 🟢 Active Online<br>
-    <b>Ref:</b> <code>{st.session_state['rep_no']}</code>
-    </div>""", unsafe_allow_html=True)
-    
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        if st.button("🔒 Logout", use_container_width=True):
-            st.session_state["authenticated"] = False
-            st.session_state["user"] = ""
-            st.rerun()
-    with col_s2:
-        if st.button("🧪 Ping Sheet", use_container_width=True, help="Test live connection to Google Sheet"):
-            try:
-                test_res = requests.get(WEB_APP_URL, timeout=8)
-                if test_res.status_code == 200: st.success("🟢 Sheet Connected!")
-                else: st.error(f"HTTP {test_res.status_code}")
-            except Exception as e: st.error(f"Offline: {e}")
-
-    st.divider()
-    st.markdown("### 📋 Client Dues Lookup")
-    sq = st.text_input("Search Chemist or Town", placeholder="Search chemist or town").strip().lower()
-    matches = [c for c in CLIENT_DATABASE if sq in c['name'].lower() or sq in c['area'].lower()] if sq else CLIENT_DATABASE[:6]
-    for item in matches[:8]:
-        st.markdown(f"**{item['name']}** (`{item['code']}`)\n{item['area']} | Due: **Rs. {item['dues']:,}**")
-        st.write("---")
-
-st.markdown(f"""<div style="background:linear-gradient(135deg, #0D2818, #164E33); padding:12px 18px; border-radius:8px; color:white; display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-<div><span style="font-size:1.5rem; font-weight:800;">🌿 ALPINE HERBS PVT. LTD.</span><br><span style="font-size:0.8rem; color:#D5EBDD;">BIRGUNJ, NEPAL | DAILY TOUR CLOSING</span></div>
-<div style="text-align:right; font-size:0.82rem;">Officer: <b>{cur_user}</b><br>ISO GMP Standard</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="brand-nav">
+<div><span style="font-size:1.55rem; font-weight:800; letter-spacing:0.5px;">🌿 ALPINE HERBS PVT. LTD.</span><br><span style="font-size:0.8rem; color:#D5EBDD;">BIRGUNJ, NEPAL &nbsp;|&nbsp; DAILY TOUR CLOSING & LEDGER AUDIT</span></div>
+<div style="text-align:right; font-size:0.82rem; color:#E7F6ED;">Officer: <b>{cur_user}</b> &nbsp;|&nbsp; ISO GMP Certified</div></div>""", unsafe_allow_html=True)
 
 c1, c2, c3, c4 = st.columns([1.2, 1.4, 1.4, 1.2])
 with c1: rep_date = st.date_input("Date (A.D.)", value=date.today())
@@ -123,6 +118,7 @@ with t3:
     st.caption("Record field allowances, per-diem, and tour advances given to personnel.")
     ed_st = st.data_editor(INIT_STAFF, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_st")
 
+# CALCULATIONS
 s_qty = pd.to_numeric(ed_s["Qty"], errors="coerce").fillna(0.0)
 s_rate = pd.to_numeric(ed_s["Rate (Rs.)"], errors="coerce").fillna(0.0)
 s_cash = pd.to_numeric(ed_s["Cash Recd (Rs.)"], errors="coerce").fillna(0.0)
@@ -141,28 +137,30 @@ net_cash = tot_cash - tot_disbursed
 with t1:
     st.info(f"📋 Live Credit & Sales Tracker: Billed: {money(tot_sales)} | Cash Recd: {money(tot_cash)} | Credit Given (Udharo): {money(tot_credit)}")
 
+# GREEN SUMMARY BOXES (AT THE BOTTOM)
 st.markdown("### 📊 Financial Closing Summary")
 sb1, sb2, sb3 = st.columns(3)
 with sb1:
-    st.markdown(f"""<div class="g-box"><b style="color:#164E33;">🛒 1. Sales & Revenue Position</b>
+    st.markdown(f"""<div class="g-box"><b style="color:#164E33; font-size:0.85rem; text-transform:uppercase;">🛒 1. Sales & Revenue Position</b>
     <div class="s-row"><span>Total Gross Billed:</span><span class="s-val">{money(tot_sales)}</span></div>
     <div class="s-row"><span>Cash Collected:</span><span class="s-val" style="color:#164E33;">{money(tot_cash)}</span></div>
     <div class="s-row" style="border:none;"><span>Credit Given:</span><span class="s-val" style="color:#A04000;">{money(tot_credit)}</span></div></div>""", unsafe_allow_html=True)
 with sb2:
-    st.markdown(f"""<div class="g-box"><b style="color:#164E33;">🏢 2. Route Disbursements</b>
+    st.markdown(f"""<div class="g-box"><b style="color:#164E33; font-size:0.85rem; text-transform:uppercase;">🏢 2. Route Disbursements</b>
     <div class="s-row"><span>Operating Expenses:</span><span class="s-val">{money(tot_exp)}</span></div>
     <div class="s-row"><span>Staff Advances:</span><span class="s-val">{money(tot_adv)}</span></div>
     <div class="s-row" style="border:none;"><span>Total Outflow:</span><span class="s-val" style="color:#800000;">{money(tot_disbursed)}</span></div></div>""", unsafe_allow_html=True)
 with sb3:
     col_net = "#0D2818" if net_cash >= 0 else "#900C3F"
-    st.markdown(f"""<div class="g-acc"><b style="color:#0D2818;">💰 3. Final Cash Settlement</b>
+    st.markdown(f"""<div class="g-acc"><b style="color:#0D2818; font-size:0.85rem; text-transform:uppercase;">💰 3. Final Cash Settlement</b>
     <div class="s-row"><span>Cash Collected:</span><span class="s-val">{money(tot_cash)}</span></div>
     <div class="s-row"><span>Less Outflow:</span><span class="s-val">- {money(tot_disbursed)}</span></div>
     <div style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
-    <span style="font-weight:800;">NET IN HAND:</span><span style="font-weight:800; font-size:1.2rem; color:{col_net};">{money(net_cash)}</span></div></div>""", unsafe_allow_html=True)
+    <span style="font-weight:800;">NET IN HAND:</span><span style="font-weight:800; font-size:1.25rem; color:{col_net};">{money(net_cash)}</span></div></div>""", unsafe_allow_html=True)
 
 if net_cash < 0: st.warning("⚠️ Warning: Disbursements exceed cash collected. Net Cash is negative.")
 
+# GOOGLE SHEET SYNC
 def sync_to_sheets():
     s_items = []
     for _, r in ed_s.iterrows():
@@ -173,33 +171,4 @@ def sync_to_sheets():
         if q > 0 or c > 0 or cb > 0 or pname or cname:
             s_items.append({"invoice": str(r.get("Invoice No.", "INV-01")), "client_name": cname or "Walk-in Party", "address": str(r.get("Address", "Birgunj")), "product_name": pname or "General Stock", "qty": q, "rate": rt, "cash_collected": c, "credit_given": cb, "total_sale": tb})
 
-    e_items = [{"details": str(r.get("Details", "")), "paid_to": str(r.get("Paid To", "Vendor")), "mode": str(r.get("Mode", "Cash")), "amount": float(r.get("Amount (Rs.)", 0) or 0), "remarks": str(r.get("Remarks", ""))} for _, r in ed_o.iterrows() if float(r.get("Amount (Rs.)", 0) or 0) > 0 or str(r.get("Details", "")).strip()]
-    a_items = [{"personnel_name": str(r.get("Staff Name", "")), "purpose": str(r.get("Purpose", "Advance")), "type": str(r.get("Category", "Staff Advance")), "amount": float(r.get("Amount (Rs.)", 0) or 0), "remarks": str(r.get("Remarks", ""))} for _, r in ed_st.iterrows() if float(r.get("Amount (Rs.)", 0) or 0) > 0 or str(r.get("Staff Name", "")).strip()]
-
-    if not (s_items or e_items or a_items):
-        st.warning("No entries to sync."); return False, 0
-
-    payload = {"date": str(rep_date), "report_no": str(st.session_state["rep_no"]), "staff_name": str(mr_name), "sales": s_items, "expenses": e_items, "advances": a_items}
-    try:
-        res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
-        if res.status_code == 200:
-            st.session_state["last_sync_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            return (True, len(s_items) + len(e_items) + len(a_items))
-        else:
-            st.error(f"Google responded with HTTP {res.status_code}. Check Apps Script permissions.")
-            return (False, 0)
-    except Exception as err:
-        st.error(f"Sync Connection Error: {err}"); return False, 0
-
-def make_pdf():
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
-    styles = getSampleStyleSheet()
-    story = [
-        Paragraph(f"<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING VOUCHER</b>", styles["Heading1"]),
-        Paragraph(f"<b>Ref:</b> {st.session_state['rep_no']} | <b>Date:</b> {rep_date} | <b>MR:</b> {mr_name} | <b>Route:</b> {route_name or 'Birgunj'}", styles["Normal"]),
-        Spacer(1, 3*mm)
-    ]
-    s_rows = [["Inv #", "Client Name", "Address", "Product", "Qty", "Rate", "Cash Recd", "Credit Given", "Total"]]
-    for _, r in ed_s.iterrows():
-        q, rt, c,
+    e_items = [{"details": str(r.get("Details", "")), "paid_to": str(r.get("Paid To", "Vendor")), "mode": str(r.get("Mode", "Cash")), "amount": float(r.get("Amount (Rs.)", 0) or 0), "remarks": str(r.get("Remarks", ""))} for _, r in ed_o.iterrows() if float(r.get("Amount (Rs.)", 0) or 0) > 0 or str(r.get("
