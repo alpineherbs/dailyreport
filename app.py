@@ -10,7 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", page_icon="🌿", layout="wide")
 
 USERS = {"Alpine": "AHP@123", "Pritam": "Pritam@2024", "Admin": "AlpineAdmin@123", "Manager": "Alpine@Birgunj"}
-DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz9-b3ePV5UrGQSLOwRv713NSZS5TR32EhtzUjIcSQPiIL3SJ6P8DgKDeenmzbQHGjC/exec"
+DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxtLqWjndP4yrLKIp8HbCLCHK7PKW6x6dWKNbNtaQS3xDNnMf7H2_w5R1RfR5Hv7J_y/exec"
 
 CLIENT_DB = [
     {"name": "Naresh Medical", "code": "BAR-001", "area": "Kalaiya", "dues": 3070},
