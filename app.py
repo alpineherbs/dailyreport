@@ -1,4 +1,4 @@
-import streamlit as st, pandas as pd, requests, uuid
+import streamlit as st, pandas as pd, requests, uuid, math
 from datetime import date, datetime
 from io import BytesIO
 from reportlab.lib import colors
@@ -10,7 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", page_icon="🌿", layout="wide")
 
 USERS = {"Alpine": "AHP@123", "Pritam": "Pritam@2024", "Admin": "AlpineAdmin@123", "Manager": "Alpine@Birgunj"}
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzjGQSgu-7rtsZXkjcpitPNnUByZDoEz-TaAVaEFNPrnkxmzS37XvELMGIAgQuuW1g/exec"
+DEFAULT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzqcy8A442WqYY8gFjPRojpLeDZw3GhQnyo7Y8PadW6vZ1YW2QvkIceFqxkZuo8166R/exec"
 
 CLIENT_DB = [
     {"name": "Naresh Medical", "code": "BAR-001", "area": "Kalaiya", "dues": 3070},
@@ -21,6 +21,21 @@ CLIENT_DB = [
     {"name": "Roshan Pharmacy", "code": "PAR-032", "area": "Birgunj", "dues": 74290},
     {"name": "Sandip Medical Hall", "code": "PAR-035", "area": "Langada Chouk", "dues": 30195}
 ]
+
+# DATA SANITIZERS (PREVENTS "NAN" FROM EVER APPEARING IN GOOGLE SHEETS)
+def clean_str(val, default=""):
+    if pd.isna(val) or val is None: return default
+    s = str(val).strip()
+    return default if s.lower() in ("nan", "none", "null", "undefined", "") else s
+
+def clean_num(val, default=0.0):
+    if pd.isna(val) or val is None: return default
+    try:
+        v = float(val)
+        return default if math.isnan(v) or math.isinf(v) else v
+    except: return default
+
+money = lambda v: f"Rs. {clean_num(v):,.2f}"
 
 st.markdown("""<style>
 #MainMenu, footer { visibility: hidden; }
@@ -56,12 +71,10 @@ if not st.session_state["authenticated"]:
     st.stop()
 
 cur_user = st.session_state.get("user", "Staff")
-money = lambda v: f"Rs. {float(v or 0):,.2f}"
 
 if "rep_no" not in st.session_state:
     st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
-# SIDEBAR: USER SESSION, LOGOUT & DIAGNOSTICS
 with st.sidebar:
     st.markdown("### 👤 User Session")
     st.markdown(f"""<div class="user-card">
@@ -71,24 +84,27 @@ with st.sidebar:
     <b>Ref No:</b> <code>{st.session_state['rep_no']}</code>
     </div>""", unsafe_allow_html=True)
 
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("🔒 Logout", use_container_width=True):
-            st.session_state["authenticated"] = False
-            st.session_state["user"] = ""
-            st.rerun()
-    with col_btn2:
-        if st.button("🧪 Ping Sheet", use_container_width=True, help="Test if Google Webhook is active and authorized"):
-            try:
-                t_res = requests.get(WEB_APP_URL, timeout=8, allow_redirects=True)
-                if "accounts.google.com" in t_res.text:
-                    st.error("❌ Auth Error: Google is asking for login. Set 'Who has access' to 'Anyone' in Apps Script.")
-                elif t_res.status_code == 200:
-                    st.success("🟢 Google Sheet Connected & Active!")
-                else:
-                    st.error(f"HTTP Error: {t_res.status_code}")
-            except Exception as e:
-                st.error(f"Offline: {e}")
+    if st.button("🔒 Logout", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.session_state["user"] = ""
+        st.rerun()
+
+    st.divider()
+    st.markdown("### 🔗 Google Sheet Connection")
+    webhook_url = st.text_input("Webhook URL", value=st.session_state.get("custom_url", DEFAULT_WEB_APP_URL))
+    st.session_state["custom_url"] = webhook_url.strip()
+
+    if st.button("🧪 Test Connection", use_container_width=True):
+        try:
+            t_res = requests.get(webhook_url.strip(), timeout=10, allow_redirects=True)
+            if "accounts.google.com" in t_res.text:
+                st.error("❌ Auth Error: Google is asking for login. Set 'Who has access' to 'Anyone' in Apps Script.")
+            elif t_res.status_code == 200:
+                st.success("🟢 Connected! Google Sheet is active.")
+            else:
+                st.error(f"HTTP {t_res.status_code}")
+        except Exception as e:
+            st.error(f"Sync Connection Error: {e}")
 
     st.divider()
     st.markdown("### 📋 Client Dues Lookup")
@@ -118,7 +134,7 @@ with c4: st.text_input("Report Ref", value=st.session_state["rep_no"], disabled=
 
 t1, t2, t3 = st.tabs(["🛒 1. Sales & Credit Ledger", "🏢 2. Operating Expenses", "👥 3. Staff Advances"])
 with t1:
-    st.caption("Press Tab to jump across cells, Enter to move down. Credit auto-calculates if left at 0.")
+    st.caption("Press Tab to jump across cells, Enter to move down. Empty rows are automatically ignored.")
     ed_s = st.data_editor(INIT_SALES, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_s")
 with t2:
     st.caption("Record route fuel, food, logistics, and local operational costs.")
@@ -127,19 +143,19 @@ with t3:
     st.caption("Record field allowances, per-diem, and tour advances given to personnel.")
     ed_st = st.data_editor(INIT_STAFF, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_st")
 
-# REAL-TIME CALCULATIONS
-s_qty = pd.to_numeric(ed_s["Qty"], errors="coerce").fillna(0.0)
-s_rate = pd.to_numeric(ed_s["Rate (Rs.)"], errors="coerce").fillna(0.0)
-s_cash = pd.to_numeric(ed_s["Cash Recd (Rs.)"], errors="coerce").fillna(0.0)
-s_c_man = pd.to_numeric(ed_s["Credit Given (Rs.)"], errors="coerce").fillna(0.0)
+# CLEAN NUMERIC CALCULATIONS
+s_qty = ed_s["Qty"].apply(clean_num)
+s_rate = ed_s["Rate (Rs.)"].apply(clean_num)
+s_cash = ed_s["Cash Recd (Rs.)"].apply(clean_num)
+s_c_man = ed_s["Credit Given (Rs.)"].apply(clean_num)
 
 s_bill = s_qty * s_rate
 s_cred = s_c_man.where(s_c_man > 0, (s_bill - s_cash).clip(lower=0.0))
 s_tot = s_bill.where(s_bill > 0, s_cash + s_cred)
 
 tot_sales, tot_cash, tot_credit = float(s_tot.sum()), float(s_cash.sum()), float(s_cred.sum())
-tot_exp = float(pd.to_numeric(ed_o["Amount (Rs.)"], errors="coerce").fillna(0.0).sum())
-tot_adv = float(pd.to_numeric(ed_st["Amount (Rs.)"], errors="coerce").fillna(0.0).sum())
+tot_exp = float(ed_o["Amount (Rs.)"].apply(clean_num).sum())
+tot_adv = float(ed_st["Amount (Rs.)"].apply(clean_num).sum())
 tot_disbursed = tot_exp + tot_adv
 net_cash = tot_cash - tot_disbursed
 
@@ -169,77 +185,72 @@ with sb3:
 
 if net_cash < 0: st.warning("⚠️ Warning: Disbursements exceed cash collected. Net Cash is negative.")
 
-# GOOGLE SHEET SYNC WITH DIRECT VALIDATION
+# GOOGLE SHEET SYNC WITH ZERO "NAN" TRANSMISSION
 def sync_to_sheets():
+    target_url = st.session_state.get("custom_url", DEFAULT_WEB_APP_URL).strip()
     s_items = []
     for _, r in ed_s.iterrows():
-        q = float(r.get("Qty", 0) or 0)
-        rt = float(r.get("Rate (Rs.)", 0) or 0)
-        c = float(r.get("Cash Recd (Rs.)", 0) or 0)
-        cm = float(r.get("Credit Given (Rs.)", 0) or 0)
+        cname = clean_str(r.get("Client Name"))
+        pname = clean_str(r.get("Product Name"))
+        addr = clean_str(r.get("Address"), "Birgunj")
+        inv = clean_str(r.get("Invoice No."), "INV-01")
+        q = clean_num(r.get("Qty"))
+        rt = clean_num(r.get("Rate (Rs.)"))
+        c = clean_num(r.get("Cash Recd (Rs.)"))
+        cm = clean_num(r.get("Credit Given (Rs.)"))
         tb = q * rt
         cb = cm if cm > 0 else max(0.0, tb - c)
         if tb == 0 and (c > 0 or cb > 0): tb = c + cb
-        pname = str(r.get("Product Name", "")).strip()
-        cname = str(r.get("Client Name", "")).strip()
-        if q > 0 or c > 0 or cb > 0 or pname or cname:
+
+        # ONLY SYNC IF USER ACTUALLY ENTERED DATA (SKIPS UNUSED ROWS)
+        if cname or pname or q > 0 or c > 0 or cb > 0:
             s_items.append({
-                "invoice": str(r.get("Invoice No.", "INV-01")),
-                "client_name": cname or "Walk-in Party",
-                "address": str(r.get("Address", "Birgunj")),
-                "product_name": pname or "General Stock",
+                "invoice": inv, "client_name": cname or "Walk-in Party",
+                "address": addr, "product_name": pname or "General Stock",
                 "qty": q, "rate": rt, "cash_collected": c,
                 "credit_given": cb, "total_sale": tb
             })
 
     e_items = []
     for _, r in ed_o.iterrows():
-        amt = float(r.get("Amount (Rs.)", 0) or 0)
-        det = str(r.get("Details", "")).strip()
+        amt = clean_num(r.get("Amount (Rs.)"))
+        det = clean_str(r.get("Details"))
         if amt > 0 or det:
             e_items.append({
                 "details": det or "Route Expense",
-                "paid_to": str(r.get("Paid To", "Vendor")),
-                "mode": str(r.get("Mode", "Cash")),
-                "amount": amt,
-                "remarks": str(r.get("Remarks", ""))
+                "paid_to": clean_str(r.get("Paid To"), "Vendor"),
+                "mode": clean_str(r.get("Mode"), "Cash"),
+                "amount": amt, "remarks": clean_str(r.get("Remarks"))
             })
 
     a_items = []
     for _, r in ed_st.iterrows():
-        amt = float(r.get("Amount (Rs.)", 0) or 0)
-        staff = str(r.get("Staff Name", "")).strip()
+        amt = clean_num(r.get("Amount (Rs.)"))
+        staff = clean_str(r.get("Staff Name"))
         if amt > 0 or staff:
             a_items.append({
                 "personnel_name": staff or "Staff",
-                "purpose": str(r.get("Purpose", "Advance")),
-                "type": str(r.get("Category", "Staff Advance")),
-                "amount": amt,
-                "remarks": str(r.get("Remarks", ""))
+                "purpose": clean_str(r.get("Purpose"), "Tour Advance"),
+                "type": clean_str(r.get("Category"), "Staff Advance"),
+                "amount": amt, "remarks": clean_str(r.get("Remarks"))
             })
 
     if not (s_items or e_items or a_items):
-        st.warning("⚠️ No entries to sync. Please fill in records first.")
+        st.warning("⚠️ No valid entries to sync. Please fill in records first.")
         return False, 0
 
     payload = {
-        "date": str(rep_date),
-        "report_no": str(st.session_state["rep_no"]),
-        "staff_name": str(mr_name),
-        "sales": s_items,
-        "expenses": e_items,
-        "advances": a_items
+        "date": str(rep_date), "report_no": str(st.session_state["rep_no"]),
+        "staff_name": clean_str(mr_name, "MR Staff"), "sales": s_items,
+        "expenses": e_items, "advances": a_items
     }
 
     try:
-        res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
+        res = requests.post(target_url, json=payload, timeout=25, allow_redirects=True)
         raw_text = res.text.strip()
-        
-        # Check if Google returned an HTML login page
         if "<!DOCTYPE html" in raw_text or "accounts.google.com" in raw_text:
-            st.error("❌ Google Permission Error: Google rejected sync because it's asking for login. In Apps Script, set 'Who has access' to 'Anyone' and deploy a New Version.")
+            st.error("❌ Google Permission Error: Access restricted. Set 'Who has access' to 'Anyone' in Apps Script.")
             return False, 0
-            
         try:
             data = res.json()
             if data.get("status") == "success":
@@ -253,7 +264,6 @@ def sync_to_sheets():
                 return True, len(s_items) + len(e_items) + len(a_items)
             st.error(f"❌ Unexpected Google Response: {raw_text[:200]}")
             return False, 0
-
     except Exception as err:
         st.error(f"❌ Sync Connection Error: {err}")
         return False, 0
@@ -263,80 +273,55 @@ def make_pdf():
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
     styles = getSampleStyleSheet()
-    t_style = TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#164E33")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('FONTSIZE', (0,0), (-1,-1), 8)
-    ])
+    t_style = TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#164E33")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('FONTSIZE', (0,0), (-1,-1), 8)])
 
     story = [
-        Paragraph("<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING VOUCHER</b>", styles["Heading1"]),
+        Paragraph(f"<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING VOUCHER</b>", styles["Heading1"]),
         Paragraph(f"<b>Ref:</b> {st.session_state['rep_no']} | <b>Date:</b> {rep_date} | <b>MR:</b> {mr_name} | <b>Route:</b> {route_name or 'Birgunj'}", styles["Normal"]),
         Spacer(1, 3*mm)
     ]
-
-    # 1. Sales Table
     s_rows = [["Inv #", "Client Name", "Address", "Product", "Qty", "Rate", "Cash Recd", "Credit Given", "Total"]]
     for _, r in ed_s.iterrows():
-        q = float(r.get("Qty", 0) or 0)
-        rt = float(r.get("Rate (Rs.)", 0) or 0)
-        c = float(r.get("Cash Recd (Rs.)", 0) or 0)
-        cm = float(r.get("Credit Given (Rs.)", 0) or 0)
-        tb = q * rt
-        cb = cm if cm > 0 else max(0.0, tb - c)
-        if tb == 0: tb = c + cb
-        if q > 0 or c > 0 or cb > 0 or str(r.get("Product Name", "")).strip():
-            s_rows.append([str(r.get("Invoice No.", "")), str(r.get("Client Name", "")), str(r.get("Address", "")), str(r.get("Product Name", "")), str(q), money(rt), money(c), money(cb), money(tb)])
+        cname, pname = clean_str(r.get("Client Name")), clean_str(r.get("Product Name"))
+        q, rt, c, cm = clean_num(r.get("Qty")), clean_num(r.get("Rate (Rs.)")), clean_num(r.get("Cash Recd (Rs.)")), clean_num(r.get("Credit Given (Rs.)"))
+        tb = q * rt; cb = cm if cm > 0 else max(0.0, tb - c)
+        if tb == 0 and (c > 0 or cb > 0): tb = c + cb
+        if cname or pname or q > 0 or c > 0 or cb > 0:
+            s_rows.append([clean_str(r.get("Invoice No."), "INV-01"), cname or "Walk-in Party", clean_str(r.get("Address"), "Birgunj"), pname or "General Stock", str(q), money(rt), money(c), money(cb), money(tb)])
     if len(s_rows) > 1:
         story.append(Paragraph("<b>1. Sales & Credit Ledger</b>", styles["Heading2"]))
         t_s = Table(s_rows, colWidths=[20*mm, 52*mm, 26*mm, 52*mm, 15*mm, 27*mm, 27*mm, 27*mm, 27*mm], style=t_style)
         story.extend([t_s, Spacer(1, 3*mm)])
 
-    # 2. Expenses Table
     e_rows = [["Details", "Paid To", "Mode", "Amount", "Remarks"]]
     for _, r in ed_o.iterrows():
-        a = float(r.get("Amount (Rs.)", 0) or 0)
-        if a > 0 or str(r.get("Details", "")).strip():
-            e_rows.append([str(r.get("Details", "")), str(r.get("Paid To", "")), str(r.get("Mode", "")), money(a), str(r.get("Remarks", ""))])
+        amt, det = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Details"))
+        if amt > 0 or det:
+            e_rows.append([det or "Route Expense", clean_str(r.get("Paid To"), "Vendor"), clean_str(r.get("Mode"), "Cash"), money(amt), clean_str(r.get("Remarks"))])
     if len(e_rows) > 1:
         story.append(Paragraph("<b>2. Operating Expenses</b>", styles["Heading2"]))
         t_e = Table(e_rows, colWidths=[90*mm, 55*mm, 35*mm, 35*mm, 58*mm], style=t_style)
         story.extend([t_e, Spacer(1, 3*mm)])
 
-    # 3. Staff Advances Table
     a_rows = [["Staff Name", "Purpose", "Category", "Amount", "Remarks"]]
     for _, r in ed_st.iterrows():
-        a = float(r.get("Amount (Rs.)", 0) or 0)
-        if a > 0 or str(r.get("Staff Name", "")).strip():
-            a_rows.append([str(r.get("Staff Name", "")), str(r.get("Purpose", "")), str(r.get("Category", "")), money(a), str(r.get("Remarks", ""))])
+        amt, staff = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Staff Name"))
+        if amt > 0 or staff:
+            a_rows.append([staff or "Staff", clean_str(r.get("Purpose"), "Tour Advance"), clean_str(r.get("Category"), "Staff Advance"), money(amt), clean_str(r.get("Remarks"))])
     if len(a_rows) > 1:
         story.append(Paragraph("<b>3. Staff Advances</b>", styles["Heading2"]))
         t_a = Table(a_rows, colWidths=[65*mm, 75*mm, 45*mm, 35*mm, 53*mm], style=t_style)
         story.extend([t_a, Spacer(1, 3*mm)])
 
-    # 4. Summary & Signatures
     story.append(Paragraph("<b>4. Grand Total Reconciliation</b>", styles["Heading2"]))
-    sum_rows = [
-        ["Total Sales", "Credit Issued", "Cash Collected", "Total Expenses", "Staff Advances", "NET CASH IN HAND"],
-        [money(tot_sales), money(tot_credit), money(tot_cash), money(tot_exp), money(tot_adv), money(net_cash)]
-    ]
-    t_sum = Table(sum_rows, colWidths=[46*mm]*6, style=[
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0D2818")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#EAF5EE")),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER')
-    ])
+    sum_rows = [["Total Sales", "Credit Issued", "Cash Collected", "Total Expenses", "Staff Advances", "NET CASH IN HAND"],
+                [money(tot_sales), money(tot_credit), money(tot_cash), money(tot_exp), money(tot_adv), money(net_cash)]]
+    t_sum = Table(sum_rows, colWidths=[46*mm]*6, style=[('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0D2818")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey), ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#EAF5EE")), ('ALIGN', (0,0), (-1,-1), 'CENTER')])
     story.extend([t_sum, Spacer(1, 5*mm)])
-    story.append(Table([
-        ["\n____________________", "\n____________________", "\n____________________"],
-        ["Medical Representative", "Area Sales Manager", "Head Office Audit"]
-    ], colWidths=[91*mm]*3, style=[('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+    story.append(Table([["\n____________________", "\n____________________", "\n____________________"], ["Medical Representative", "Area Sales Manager", "Head Office Audit"]], colWidths=[91*mm]*3, style=[('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     doc.build(story)
     return buf.getvalue()
 
-# SUBMISSION CONTROLS (DIRECTLY BELOW SUMMARY)
 st.write("")
 b1, b2 = st.columns([3, 1])
 with b1:
@@ -347,7 +332,7 @@ with b1:
                 st.session_state["pdf"] = make_pdf()
                 sync_t = st.session_state.get("sync_time", "")
                 st.balloons()
-                st.success(f"✅ Report `{st.session_state['rep_no']}` synced! ({count} records verified in Google Sheets at {sync_t})")
+                st.success(f"✅ Report `{st.session_state['rep_no']}` synced! ({count} clean records written to Google Sheets at {sync_t})")
 with b2:
     if st.button("🔄 Reset / Start Blank", use_container_width=True):
         st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
