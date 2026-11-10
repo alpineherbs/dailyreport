@@ -98,7 +98,7 @@ money = lambda v: f"Rs. {clean_num(v):,.2f}"
 
 def resolve_client(raw_val, default_area="Birgunj"):
     s = clean_str(raw_val)
-    if not s or s.lower() == "other / walk-in":
+    if not s or s.lower() in ("other / walk-in", "walk-in party"):
         return "Walk-in Party", "WALK-IN", default_area
     if "— 📍" in s:
         s = s.split("— 📍")[0].strip()
@@ -110,9 +110,9 @@ def resolve_client(raw_val, default_area="Birgunj"):
                 return cname, ccode, item.get("area", default_area)
         return cname, ccode, default_area
     for item in st.session_state["client_db"]:
-        if item["name"].lower() == s.lower():
+        if item["name"].lower() == s.lower() or item["code"].lower() == s.lower():
             return item["name"], item["code"], item.get("area", default_area)
-    return s, "WALK-IN", default_area
+    return s, "NEW-CLIENT", default_area
 
 # --- STYLING ---
 st.markdown("""<style>
