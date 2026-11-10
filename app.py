@@ -9,7 +9,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", page_icon="🌿", layout="wide")
 
@@ -98,8 +98,8 @@ money = lambda v: f"Rs. {clean_num(v):,.2f}"
 
 def resolve_client(raw_val, default_area="Birgunj"):
     s = clean_str(raw_val)
-    if not s or s.lower() in ("other / walk-in", "walk-in party"):
-        return "Walk-in Party", "WALK-IN", default_area
+    if not s:
+        return "", "", ""
     if "— 📍" in s:
         s = s.split("— 📍")[0].strip()
     if "[" in s and s.endswith("]"):
@@ -282,7 +282,7 @@ else:
 
 CLIENT_OPTIONS = [""] + [
     f"{c['name']}  [{c['code']}] — 📍 {c['area']}" for c in sorted_client_pool
-] + ["Other / Walk-in"]
+]
 
 client_col_config = {
     "Client Name": st.column_config.SelectboxColumn(
@@ -365,8 +365,8 @@ with sb3:
     <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
     <span style="font-weight:800;">NET CASH IN HAND:</span><span style="font-weight:800; font-size:1.3rem; color:{col_net};">{money(net_cash)}</span></div></div>""", unsafe_allow_html=True)
 
-# Google Sheets Sync
-def sync_to_sheets():
+# Build Payload Data
+def prepare_payload():
     s_items = []
     for _, r in ed_s.iterrows():
         raw_client = r.get("Client Name")
@@ -376,10 +376,12 @@ def sync_to_sheets():
         c, cm = clean_num(r.get("Cash Recd (Rs.)")), clean_num(r.get("Credit Given (Rs.)"))
         tb = q * rt; cb = cm if cm > 0 else max(0.0, tb - c)
         if tb == 0 and (c > 0 or cb > 0): tb = c + cb
-        if cname or pname or q > 0 or f_q > 0 or c > 0 or cb > 0:
+        
+        # Strictly ignore empty rows
+        if cname and (pname or q > 0 or f_q > 0 or c > 0 or cb > 0):
             s_items.append({
                 "invoice": clean_str(r.get("Invoice No."), "INV-01"),
-                "client_name": cname or "Walk-in Party",
+                "client_name": cname,
                 "client_code": ccode, "address": carea,
                 "product_name": pname or "General Stock",
                 "qty": q, "foc_qty": f_q, "rate": rt,
@@ -392,9 +394,9 @@ def sync_to_sheets():
         cname, ccode, _ = resolve_client(raw_client)
         rec = clean_str(r.get("Receipt No."), "REC-01")
         amt = clean_num(r.get("Amount Collected (Rs.)"))
-        if cname or amt > 0:
+        if cname and amt > 0:
             c_items.append({
-                "receipt_no": rec, "client_name": cname or "Chemist",
+                "receipt_no": rec, "client_name": cname,
                 "client_code": ccode, "mode": clean_str(r.get("Payment Mode"), "Cash"),
                 "amount": amt, "remarks": clean_str(r.get("Remarks / Ref"), "Old Dues")
             })
@@ -405,9 +407,9 @@ def sync_to_sheets():
         cname, ccode, _ = resolve_client(raw_client)
         pname = clean_str(r.get("Product Name"))
         rq, r_rt = clean_num(r.get("Return Qty")), clean_num(r.get("Rate (Rs.)"))
-        if cname or pname or rq > 0:
+        if cname and (pname or rq > 0):
             r_items.append({
-                "client_name": cname or "Chemist", "client_code": ccode,
+                "client_name": cname, "client_code": ccode,
                 "product_name": pname or "Returned Item", "qty": rq, "rate": r_rt,
                 "total": rq * r_rt, "reason": clean_str(r.get("Reason"), "Expiry")
             })
@@ -430,6 +432,50 @@ def sync_to_sheets():
                 "type": clean_str(r.get("Category"), "Staff Advance"), "amount": amt, "remarks": clean_str(r.get("Remarks"))
             })
 
+    return s_items, c_items, r_items, e_items, a_items
+
+# PDF Generator Function
+def generate_pdf(s_items, c_items, r_items, e_items, a_items):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=10*mm, leftMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=18, textColor=colors.HexColor('#0D2818'))
+    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.HexColor('#2D7D52'))
+
+    elements.append(Paragraph("<b>ALPINE HERBS PVT. LTD.</b>", title_style))
+    elements.append(Paragraph(f"Field Closing Audit Report | Ref: <b>{st.session_state['rep_no']}</b> | Date: {rep_date} ({bs_miti}) | MR: {mr_name}", sub_style))
+    elements.append(Spacer(1, 10))
+
+    # Sales Table
+    if s_items:
+        elements.append(Paragraph("<b>1. Sales Transactions</b>", styles['Heading3']))
+        s_data = [["Inv No", "Client Name", "Code", "Product", "Qty", "Rate", "Cash Recd", "Credit", "Total"]]
+        for i in s_items:
+            s_data.append([i['invoice'], i['client_name'], i['client_code'], i['product_name'], str(i['qty']), f"{i['rate']:.2f}", f"{i['cash_collected']:.2f}", f"{i['credit_given']:.2f}", f"{i['total_sale']:.2f}"])
+        t = Table(s_data)
+        t.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor('#C8DCCF')), ('GRID', (0,0), (-1,-1), 0.5, colors.grey)]))
+        elements.append(t)
+        elements.append(Spacer(1, 10))
+
+    # Summary Box
+    summary_data = [
+        ["Total Sales Billed", f"Rs. {tot_sales:,.2f}", "Total Operating Expenses", f"Rs. {tot_exp:,.2f}"],
+        ["Total Cash Collected", f"Rs. {total_gross_cash:,.2f}", "Total Staff Advances", f"Rs. {tot_adv:,.2f}"],
+        ["Total Credit Given", f"Rs. {tot_credit:,.2f}", "NET CASH IN HAND", f"Rs. {net_cash:,.2f}"]
+    ]
+    sum_table = Table(summary_data)
+    sum_table.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F4FAF6')), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#B0D4BE'))]))
+    elements.append(Paragraph("<b>Financial Closing Summary</b>", styles['Heading3']))
+    elements.append(sum_table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+# Google Sheets Sync Call
+def sync_to_sheets(s_items, c_items, r_items, e_items, a_items):
     if not (s_items or c_items or r_items or e_items or a_items):
         st.warning("⚠️ No valid entries to sync. Please fill in records first.")
         return False, 0
@@ -454,15 +500,28 @@ def sync_to_sheets():
         st.error(f"❌ Sync Connection Error: {err}")
         return False, 0
 
-b1, b2 = st.columns([3, 1])
+s_items, c_items, r_items, e_items, a_items = prepare_payload()
+
+b1, b2, b3 = st.columns([2, 1.5, 1])
 with b1:
     if st.button("🚀 CONFIRM & SYNC REPORT TO MASTER", type="primary", use_container_width=True):
         with st.spinner("Syncing to Master Ledger..."):
-            ok, count = sync_to_sheets()
+            ok, count = sync_to_sheets(s_items, c_items, r_items, e_items, a_items)
             if ok:
                 st.balloons()
                 st.success(f"✅ Report `{st.session_state['rep_no']}` synchronized successfully! ({count} records written to Google Sheets)")
+
 with b2:
+    pdf_bytes = generate_pdf(s_items, c_items, r_items, e_items, a_items)
+    st.download_button(
+        label="📄 Download Closing Report (PDF)",
+        data=pdf_bytes,
+        file_name=f"Alpine_Closing_{st.session_state['rep_no']}.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
+
+with b3:
     if st.button("🔄 Reset / Start Blank", use_container_width=True):
         st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
         st.session_state["form_id"] += 1
