@@ -35,6 +35,42 @@ st.markdown("""<style>
 }
 </style>""", unsafe_allow_html=True)
 
+# --- USER CREDENTIALS MAPPING ---
+USERS = {
+    "Pritam Das": "pritam2026",
+    "Manish Das": "manish2026",
+    "Admin": "alpine2026"
+}
+
+# --- AUTHENTICATION STATE ---
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.markdown("""
+    <div style="max-width: 400px; margin: 100px auto; padding: 30px; background: #FAFCFA; border: 1px solid #D1E5D8; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center;">
+        <h2 style="color: #0D2818; margin-bottom: 5px;">🌿 ALPINE HERBS</h2>
+        <p style="color: #4A6354; font-size: 0.88rem; margin-bottom: 20px;">Field Operations Portal (Repo A)</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            login_btn = st.form_submit_button("🔒 Login", type="primary", use_container_width=True)
+            
+            if login_btn:
+                if username in USERS and USERS[username] == password:
+                    st.session_state["authenticated"] = True
+                    st.session_state["staff_name"] = username
+                    st.success("Login successful!")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
+    st.stop()
+
 # --- DYNAMIC CLIENT DIRECTORY LOADER (FROM GOOGLE SHEETS) ---
 @st.cache_data(ttl=30)
 def load_client_directory():
@@ -70,10 +106,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR METADATA ---
+# --- SIDEBAR METADATA & LOGOUT ---
 with st.sidebar:
     st.markdown("### 📋 Submission Details")
-    staff_name = st.text_input("MR / Sales Executive Name", "Pritam Das")
+    staff_name = st.text_input("MR / Sales Executive Name", st.session_state.get("staff_name", "Pritam Das"))
     report_no = st.text_input("Report Reference / ID", f"REP-{datetime.date.today().strftime('%Y%m%d')}")
     date_ad = st.date_input("Date (AD)", datetime.date.today())
     bs_date = st.text_input("Nepali Miti (YYYY-MM-DD)", "2083-07-20")
@@ -83,6 +119,11 @@ with st.sidebar:
         st.cache_data.clear()
         st.session_state["client_db"] = load_client_directory()
         st.success("Client directory reloaded successfully!")
+        st.rerun()
+
+    st.divider()
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state["authenticated"] = False
         st.rerun()
 
 # --- INITIALIZE TRANSACTION LISTS IN SESSION STATE ---
@@ -120,7 +161,6 @@ with tab1:
         st.markdown("---")
         st.markdown("**Add Products to this Invoice:**")
         
-        # We allow adding multiple items dynamically
         if "temp_cart" not in st.session_state:
             st.session_state["temp_cart"] = []
 
@@ -168,7 +208,6 @@ with tab1:
             tot_invoice_amt = sum(item["total"] for item in st.session_state["temp_cart"])
             credit_given = max(0.0, tot_invoice_amt - cash_collected)
 
-            # Push each item as a structured sales entry or as bundled
             for item in st.session_state["temp_cart"]:
                 st.session_state["sales_entries"].append({
                     "client_code": c_code,
@@ -178,7 +217,7 @@ with tab1:
                     "qty": item["qty"],
                     "foc_qty": item["foc_qty"],
                     "rate": item["rate"],
-                    "cash_collected": cash_collected / len(st.session_state["temp_cart"]), # distributed
+                    "cash_collected": cash_collected / len(st.session_state["temp_cart"]),
                     "credit_given": credit_given / len(st.session_state["temp_cart"]),
                     "total_sale": item["total"]
                 })
@@ -242,32 +281,4 @@ with tab3:
     with st.form("ret_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            sel_client_ret = st.selectbox("Select Chemist / Client", client_options if client_options else ["No Clients Found [PAR-000]"], key="ret_cli")
-            product_name = st.text_input("Returned Product Name", key="ret_prod")
-        with col2:
-            qty = st.number_input("Return Quantity", min_value=1.0, value=1.0, step=1.0, key="ret_qty")
-            rate = st.number_input("Rate per Unit (Rs.)", min_value=0.0, value=0.0, step=10.0, key="ret_rate")
-            reason = st.text_input("Reason for Return", "Expiry / Damage")
-
-        if st.form_submit_button("➕ Add Return Entry", type="primary"):
-            selected_str = sel_client_ret.strip()
-            if "[" in selected_str and "]" in selected_str:
-                parts = selected_str.split("[")
-                c_name = parts[0].strip()
-                c_code = parts[1].replace("]", "").split("—")[0].strip()
-            else:
-                c_name = selected_str
-                matched_c = next((c for c in client_pool if c["name"].lower() == c_name.lower()), {})
-                c_code = matched_c.get("code", "PAR-000")
-
-            tot_ret = qty * rate
-            st.session_state["return_entries"].append({
-                "client_code": c_code,
-                "client_name": c_name,
-                "product_name": product_name,
-                "qty": qty,
-                "rate": rate,
-                "total": tot_ret,
-                "reason": reason
-            })
-            st.success(f"Added return entry
+            sel_client_ret = st.selectbox("Select Chemist / Client", client_options if client_options else ["No Clients Found [PAR-0
