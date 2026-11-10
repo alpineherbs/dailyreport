@@ -14,7 +14,7 @@ st.set_page_config(
 
 # SPREADSHEET ID & APPS SCRIPT WEBHOOK URL
 SHEET_ID = "1cpPYFS9EkajB5tGfMnReIJ71cmB5djz6oaMvvEoqs6A"
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxG9ENtvINZxBhDVQyAkPiHojvQxPrRa7oV9tKrqR0NbWT7MEtMUN4Oj2y3JI75Kn7m/exec"  # Replace with your deployed Google Apps Script URL
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxb9oHiM2t0z5az2_Ekbyab4HcitWZfHw1sUVU3f6gYoVxNzFCQeUWiElfsafAoe3yw/exec"  # Replace with your deployed Google Apps Script URL
 
 # --- PROFESSIONAL STYLING ---
 st.markdown("""
