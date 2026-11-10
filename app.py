@@ -21,7 +21,7 @@ USERS = {
     "Manager": "Alpine@Birgunj"
 }
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzorFkbj5in7NdNAsh_zvSPMZSzM1HmzVTCnoCCUQ_85izF9C1GrC1BB00WvLiRwri5/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyxbrlC6Ayn-ShWWBLGXGNBd9wnqc3m4lXRyfE6U6Fsbtnbea5R3_JBvq0ggKitR5pD/exec"
 SHEET_ID = "1cpPYFS9EkajB5tGfMnReIJ71cmB5djz6oaMvvEoqs6A"
 
 # --- EXPANDED A-TO-Z MASTER DIRECTORY ---
