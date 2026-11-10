@@ -24,7 +24,7 @@ USERS = {
     "Manager": "Alpine@Birgunj"
 }
 
-# --- COMPLETE A-TO-Z CLIENT DIRECTORY (SYNTAX-SAFE) ---
+# --- CLIENT DIRECTORY ---
 CLIENTS_DATA = """name,code,area,district,phone,dues
 Aarav Pharma,PAR-001,Birgunj,Parsa,,4500
 Ashok Medical Hall,PAR-002,Naukatola,Parsa,,12230
@@ -45,64 +45,22 @@ Everest Pharmacy,PAR-009,Birwa Chouk,Parsa,,0
 Fatepur Health Clinic,PAR-010,Fatepur,Parsa,,0
 Friends Medical Hall,PAR-012,Birgunj,Parsa,,3400
 Ganesh Srestha,PAR-012,Birgunj,Parsa,,63390
-Gadi Mai Medical Hall,PAR-011,Pachgawa,Parsa,,0
-Gudi Pharmacy,BAR-028,Bariyarpur,Bara,,0
 Gupta Medical Store,BAR-016,Kalaiya,Bara,,7800
 Hariom Medical,BAR-005,Kolvi,Bara,9811229323,2300
-Harnaiya Aashirvad Medical,PAR-013,Harnaiya,Parsa,,4565
 Himal Health Clinic,PAR-017,Naukatola,Parsa,,4100
-Hargendra Pande Medical,BAR-021,Rautahar,Bara,,500
-Harnaiya City Hospital,PAR-041,Harnaiya,Parsa,,0
 Ideal Pharmacy,PAR-018,Birgunj,Parsa,,6900
 Janta Medical Hall,BAR-019,Jeetpur,Bara,,8300
 Jeevan Raksha Clinic,PAR-020,Birgunj,Parsa,,12800
-Jitendra Health Clinic,PAR-031,Mahuwan,Parsa,,4565
-Jungbahadur Medical,BAR-022,Bagrampur,Bara,,200
 Kalaiya Medical Centre,BAR-021,Kalaiya,Bara,,9400
-Kaliyani Medical Hall,BAR-012,Kolvi,Bara,,15580
-Kohinoor Medical Hall,PAR-017,Milan Chouk,Parsa,,0
 Krishna Pharmacy,PAR-022,Langada Chouk,Parsa,,14100
 Laxmi Medical Store,PAR-023,Birgunj,Parsa,,18500
 Mahir Health Clinic,BAR-002,Jeetpur,Bara,9807100296,8165
-Madhav Medical Hall,PAR-014,Pachgawa,Parsa,,0
 Naresh Medical,BAR-001,Kalaiya,Bara,9807267001,3100
 Nimash Medical,BAR-016,Simara,Bara,9845120836,4620
-Nirajan Pharmacy,BAR-004,Bakuliya,Bara,9804242586,550
-Nawal Kishor Medical Hall,PAR-015,Pachgawa,Parsa,,0
-Nausad Medical Hall,PAR-016,Rangapur,Parsa,,0
-Noor Tamana Health Clinic,PAR-019,Derbana,Parsa,,0
-OM Shivsakti Pharmacy,BAR-029,Kalaiya,Bara,,3680
-Om Sai Medical,PAR-026,Birgunj,Parsa,,5600
-Prithvi Medical Hall,BAR-018,Jaitapur,Bara,,6745
-Pandey Medical Hall,PAR-005,Badanihar,Parsa,,7065
-Pandey Medical Hall (Murli),PAR-021,Murli,Parsa,,700
-Puja Medical Hall,PAR-022,Fatepur,Parsa,,1030
-Pushpa Medical Hall,PAR-038,Kathariya,Parsa,,105
-Quality Health Pharma,PAR-029,Birgunj,Parsa,,11300
 Roshan Pharmacy,PAR-025,Birgunj,Parsa,,74290
-Rupa Medical Hall,BAR-008,Simara,Bara,,5515
-Roman Surgical,BAR-015,Khopawa,Bara,9821231370,1660
-Raina Health Clinic,PAR-023,Veda Tol,Parsa,,3672
-Rihansh Medical Hall,PAR-024,Birgunj,Parsa,,1740
 Sandip Medical Hall,PAR-027,Langada Chouk,Parsa,,30195
 Sanjeevani Clinic,BAR-009,Simara,Bara,9845130209,2195
-Sudama Surgical,PAR-003,Neutan,Parsa,,20200
-S.K.S Pharma,BAR-006,Parsauni,Bara,,1175
-Shohalal Medical Hall,BAR-013,Ganj Bhawanipur,Bara,9814286651,7175
-Sanniya Medical Hall,BAR-025,Jeetpur,Bara,,3460
-Sapna Health Clinic,BAR-027,Bariyarpur,Bara,,1365
-Samir Medical Hall,PAR-026,Pachgawa,Parsa,,0
-Sohil Medical Hall,PAR-028,Pokhariya,Parsa,,11600
-Shahu Pharmacy,PAR-035,Dokaila,Parsa,,0
-Satiya Health Clinic,PAR-039,Lautan,Parsa,,0
-Safe Life Hospital,BAR-019,Benauli,Bara,,740
-Tarai Medical Hall,PAR-029,Manwa Bazar,Parsa,,235
-Tarkeshwar Medical Hall,PAR-030,Nagwa,Parsa,,8885
-Tirupati Medical Hall,PAR-037,Naukatola,Parsa,,6400
 Universal Health Clinic,PAR-038,Birgunj,Parsa,,15700
-Verma Medical Store,BAR-039,Jeetpur,Bara,,9100
-Welfare Pharmacy,PAR-040,Birgunj,Parsa,,4600
-Yadav Medical Hall,BAR-041,Kalaiya,Bara,,11200
 Zenith Health Care,PAR-042,Birgunj,Parsa,,7300"""
 
 if "client_db" not in st.session_state:
@@ -114,7 +72,6 @@ if "client_db" not in st.session_state:
 if "form_id" not in st.session_state:
     st.session_state["form_id"] = 0
 
-# --- UTILITIES ---
 def clean_str(val, default=""):
     if pd.isna(val) or val is None: return default
     s = str(val).strip()
@@ -190,7 +147,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
     st.session_state["user"] = ""
 
-# --- LOGIN SCREEN ---
+# --- LOGIN ---
 if not st.session_state["authenticated"]:
     c1, c2, c3 = st.columns([1, 1.2, 1])
     with c2:
@@ -216,7 +173,7 @@ if not st.session_state["authenticated"]:
                     st.session_state["user"] = u.strip()
                     st.rerun()
                 else:
-                    st.error("❌ Invalid Username or Password. (Default: Alpine / AHP@123)")
+                    st.error("❌ Invalid Username or Password.")
 
         st.caption("ℹ️ Accounts: `Alpine` / `Pritam` / `Admin` | Head Office: Birgunj")
     st.stop()
@@ -249,7 +206,6 @@ with st.sidebar:
         st.markdown(f"**{item['name']}** (`{item['code']}`)\n📍 {item['area']}{phone_txt}\n💰 Dues: **Rs. {item['dues']:,}**")
         st.write("---")
 
-# Compact Initial DataFrames (No long fragile lines)
 INIT_SALES = pd.DataFrame({
     "Invoice No.": ["INV-01", "INV-02", "INV-03"],
     "Client Name": ["", "", ""],
@@ -295,7 +251,6 @@ INIT_STAFF = pd.DataFrame({
     "Remarks": [""]
 })
 
-# Main Header Banner
 st.markdown("""
 <div class="main-header-banner">
     <div style="font-size: 1.55rem; font-weight: 800; color: #FFFFFF;">🌿 ALPINE HERBS PVT. LTD.</div>
@@ -303,7 +258,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Tour Metadata Inputs
 c1, c2, c3, c4, c5 = st.columns([1.1, 1.1, 1.3, 1.3, 1.1])
 with c1:
     rep_date = st.date_input("Date (A.D.)", value=date.today())
@@ -318,9 +272,7 @@ with c4:
 with c5:
     st.text_input("Report Ref", value=st.session_state["rep_no"], disabled=True)
 
-# A-to-Z Client Recommendation Pool
 all_clients = sorted(st.session_state["client_db"], key=lambda x: x["name"].lower())
-
 if selected_area != "All Territories (A-Z)":
     area_clients = [c for c in all_clients if c["area"].lower() == selected_area.lower()]
     other_clients = [c for c in all_clients if c["area"].lower() != selected_area.lower()]
@@ -342,7 +294,6 @@ client_col_config = {
     )
 }
 
-# Entry Tabs
 t1, t2, t3, t4 = st.tabs([
     "🛒 1. Sales & Collections",
     "🏢 2. Operating Expenses",
@@ -354,49 +305,21 @@ fid = st.session_state["form_id"]
 
 with t1:
     st.markdown("##### 🛒 Sales Ledger (With FOC Bonus Tracking)")
-    st.caption("💡 Click on 'Client Name' and type any letter to select chemists. Codes are auto-entered.")
-    ed_s = st.data_editor(
-        INIT_SALES,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        key=f"ed_s_{fid}",
-        column_config=client_col_config
-    )
-
+    ed_s = st.data_editor(INIT_SALES, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_s_{fid}", column_config=client_col_config)
     st.write("")
     st.markdown("##### 💵 Dedicated Cash Collections & Payment Receipts")
-    st.caption("Record direct payments and dues recovered from clients with receipt numbers.")
-    ed_c = st.data_editor(
-        INIT_COLLECTIONS,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        key=f"ed_c_{fid}",
-        column_config=client_col_config
-    )
+    ed_c = st.data_editor(INIT_COLLECTIONS, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_c_{fid}", column_config=client_col_config)
 
 with t2:
-    st.caption("Record route fuel, food, logistics, and operational vendor costs.")
     ed_o = st.data_editor(INIT_OFFICE, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_o_{fid}")
 
 with t3:
-    st.caption("Record daily allowances, per-diem, and tour advances given to personnel.")
     ed_st = st.data_editor(INIT_STAFF, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_st_{fid}")
 
 with t4:
-    st.markdown("##### 🔄 Goods Return Ledger (Client Product Returns)")
-    st.caption("Record stock returned by clients due to expiry, damage, or slow turnover.")
-    ed_r = st.data_editor(
-        INIT_RETURNS,
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        key=f"ed_r_{fid}",
-        column_config=client_col_config
-    )
+    ed_r = st.data_editor(INIT_RETURNS, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_r_{fid}", column_config=client_col_config)
 
-# Financial Calculations
+# Math & Calculations
 s_qty = ed_s["Qty"].apply(clean_num)
 s_rate = ed_s["Rate (Rs.)"].apply(clean_num)
 s_cash = ed_s["Cash Recd (Rs.)"].apply(clean_num)
@@ -422,32 +345,25 @@ tot_adv = float(ed_st["Amount (Rs.)"].apply(clean_num).sum())
 tot_disbursed = tot_exp + tot_adv
 net_cash = total_gross_cash - tot_disbursed
 
-with t1:
-    st.info(f"📋 Live Cash Breakdown: Direct Sales Cash: {money(tot_sales_cash)} + Dues Receipts: {money(tot_receipt_cash)} = Total Cash: {money(total_gross_cash)} | Credit Given: {money(tot_credit)}")
-
-# Corporate Financial Summary Cards
 st.markdown("### 📊 Financial Closing Summary")
 sb1, sb2, sb3 = st.columns(3)
 with sb1:
-    st.markdown(f"""<div class="g-box"><b style="color:#164E33; text-transform:uppercase; letter-spacing:0.5px;">🛒 1. Revenue & Collections</b>
+    st.markdown(f"""<div class="g-box"><b>🛒 1. Revenue & Collections</b>
     <div class="s-row"><span>Total Sales Billed:</span><span class="s-val">{money(tot_sales)}</span></div>
-    <div class="s-row"><span>Direct Sales Cash:</span><span class="s-val">{money(tot_sales_cash)}</span></div>
-    <div class="s-row"><span>Receipt Dues Collected:</span><span class="s-val">{money(tot_receipt_cash)}</span></div>
     <div class="s-row"><span>Total Cash Collected:</span><span class="s-val" style="color:#164E33;">{money(total_gross_cash)}</span></div>
-    <div class="s-row"><span>Credit Given:</span><span class="s-val" style="color:#A04000;">{money(tot_credit)}</span></div>
-    <div class="s-row" style="border:none;"><span>Goods Return Total:</span><span class="s-val" style="color:#6B46C1;">{money(tot_returns)}</span></div></div>""", unsafe_allow_html=True)
+    <div class="s-row"><span>Credit Given:</span><span class="s-val" style="color:#A04000;">{money(tot_credit)}</span></div></div>""", unsafe_allow_html=True)
 with sb2:
-    st.markdown(f"""<div class="g-box"><b style="color:#164E33; text-transform:uppercase; letter-spacing:0.5px;">🏢 2. Route Disbursements</b>
+    st.markdown(f"""<div class="g-box"><b>🏢 2. Route Disbursements</b>
     <div class="s-row"><span>Operating Expenses:</span><span class="s-val">{money(tot_exp)}</span></div>
     <div class="s-row"><span>Staff Advances:</span><span class="s-val">{money(tot_adv)}</span></div>
-    <div class="s-row" style="border:none;"><span>Total Outflow:</span><span class="s-val" style="color:#800000;">{money(tot_disbursed)}</span></div></div>""", unsafe_allow_html=True)
+    <div class="s-row"><span>Total Outflow:</span><span class="s-val" style="color:#800000;">{money(tot_disbursed)}</span></div></div>""", unsafe_allow_html=True)
 with sb3:
     col_net = "#0D2818" if net_cash >= 0 else "#900C3F"
-    st.markdown(f"""<div class="g-acc"><b style="color:#0D2818; text-transform:uppercase; letter-spacing:0.5px;">💰 3. Final Cash Settlement</b>
+    st.markdown(f"""<div class="g-acc"><b>💰 3. Final Cash Settlement</b>
     <div class="s-row"><span>Total Cash Collected:</span><span class="s-val">{money(total_gross_cash)}</span></div>
     <div class="s-row"><span>Less Total Outflow:</span><span class="s-val">- {money(tot_disbursed)}</span></div>
     <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
-    <span style="font-weight:800; font-size:0.95rem;">NET CASH IN HAND:</span><span style="font-weight:800; font-size:1.3rem; color:{col_net};">{money(net_cash)}</span></div></div>""", unsafe_allow_html=True)
+    <span style="font-weight:800;">NET CASH IN HAND:</span><span style="font-weight:800; font-size:1.3rem; color:{col_net};">{money(net_cash)}</span></div></div>""", unsafe_allow_html=True)
 
 # Google Sheets Sync
 def sync_to_sheets():
@@ -458,15 +374,13 @@ def sync_to_sheets():
         pname = clean_str(r.get("Product Name"))
         q, f_q, rt = clean_num(r.get("Qty")), clean_num(r.get("FOC Qty")), clean_num(r.get("Rate (Rs.)"))
         c, cm = clean_num(r.get("Cash Recd (Rs.)")), clean_num(r.get("Credit Given (Rs.)"))
-        tb = q * rt
-        cb = cm if cm > 0 else max(0.0, tb - c)
+        tb = q * rt; cb = cm if cm > 0 else max(0.0, tb - c)
         if tb == 0 and (c > 0 or cb > 0): tb = c + cb
         if cname or pname or q > 0 or f_q > 0 or c > 0 or cb > 0:
             s_items.append({
                 "invoice": clean_str(r.get("Invoice No."), "INV-01"),
                 "client_name": cname or "Walk-in Party",
-                "client_code": ccode,
-                "address": carea,
+                "client_code": ccode, "address": carea,
                 "product_name": pname or "General Stock",
                 "qty": q, "foc_qty": f_q, "rate": rt,
                 "cash_collected": c, "credit_given": cb, "total_sale": tb
@@ -480,12 +394,9 @@ def sync_to_sheets():
         amt = clean_num(r.get("Amount Collected (Rs.)"))
         if cname or amt > 0:
             c_items.append({
-                "receipt_no": rec,
-                "client_name": cname or "Chemist",
-                "client_code": ccode,
-                "mode": clean_str(r.get("Payment Mode"), "Cash"),
-                "amount": amt,
-                "remarks": clean_str(r.get("Remarks / Ref"), "Old Dues")
+                "receipt_no": rec, "client_name": cname or "Chemist",
+                "client_code": ccode, "mode": clean_str(r.get("Payment Mode"), "Cash"),
+                "amount": amt, "remarks": clean_str(r.get("Remarks / Ref"), "Old Dues")
             })
 
     r_items = []
@@ -496,11 +407,9 @@ def sync_to_sheets():
         rq, r_rt = clean_num(r.get("Return Qty")), clean_num(r.get("Rate (Rs.)"))
         if cname or pname or rq > 0:
             r_items.append({
-                "client_name": cname or "Chemist",
-                "client_code": ccode,
-                "product_name": pname or "Returned Item",
-                "qty": rq, "rate": r_rt, "total": rq * r_rt,
-                "reason": clean_str(r.get("Reason"), "Expiry / Breakage")
+                "client_name": cname or "Chemist", "client_code": ccode,
+                "product_name": pname or "Returned Item", "qty": rq, "rate": r_rt,
+                "total": rq * r_rt, "reason": clean_str(r.get("Reason"), "Expiry")
             })
 
     e_items = []
@@ -508,11 +417,8 @@ def sync_to_sheets():
         amt, det = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Details"))
         if amt > 0 or det:
             e_items.append({
-                "details": det or "Route Expense",
-                "paid_to": clean_str(r.get("Paid To"), "Vendor"),
-                "mode": clean_str(r.get("Mode"), "Cash"),
-                "amount": amt,
-                "remarks": clean_str(r.get("Remarks"))
+                "details": det or "Route Expense", "paid_to": clean_str(r.get("Paid To"), "Vendor"),
+                "mode": clean_str(r.get("Mode"), "Cash"), "amount": amt, "remarks": clean_str(r.get("Remarks"))
             })
 
     a_items = []
@@ -520,11 +426,8 @@ def sync_to_sheets():
         amt, staff = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Staff Name"))
         if amt > 0 or staff:
             a_items.append({
-                "personnel_name": staff or "Staff",
-                "purpose": clean_str(r.get("Purpose"), "Tour Advance"),
-                "type": clean_str(r.get("Category"), "Staff Advance"),
-                "amount": amt,
-                "remarks": clean_str(r.get("Remarks"))
+                "personnel_name": staff or "Staff", "purpose": clean_str(r.get("Purpose"), "Tour Advance"),
+                "type": clean_str(r.get("Category"), "Staff Advance"), "amount": amt, "remarks": clean_str(r.get("Remarks"))
             })
 
     if not (s_items or c_items or r_items or e_items or a_items):
@@ -540,151 +443,27 @@ def sync_to_sheets():
 
     try:
         res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
-        raw_text = res.text.strip()
-        if "<!DOCTYPE html" in raw_text or "accounts.google.com" in raw_text:
-            st.error("❌ Google Permission Error: Set 'Who has access' to 'Anyone' in Apps Script.")
-            return False, 0
-        try:
-            data = res.json()
-            if data.get("status") == "success":
-                st.session_state["sync_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                return True, data.get("records_synced", len(s_items) + len(c_items) + len(r_items) + len(e_items) + len(a_items))
-            else:
-                st.error(f"❌ Google Script Error: {data.get('message', raw_text)}")
-                return False, 0
-        except Exception:
-            if "success" in raw_text.lower():
-                return True, len(s_items) + len(c_items) + len(r_items) + len(e_items) + len(a_items)
-            st.error(f"❌ Unexpected Google Response: {raw_text[:200]}")
+        data = res.json()
+        if data.get("status") == "success":
+            st.session_state["sync_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return True, data.get("records_synced", len(s_items) + len(c_items) + len(r_items) + len(e_items) + len(a_items))
+        else:
+            st.error(f"❌ Google Script Error: {data.get('message')}")
             return False, 0
     except Exception as err:
         st.error(f"❌ Sync Connection Error: {err}")
         return False, 0
 
-# Multi-Section PDF Generator
-def make_pdf():
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
-    styles = getSampleStyleSheet()
-    t_style = TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#164E33")), 
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white), 
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey), 
-        ('FONTSIZE', (0,0), (-1,-1), 8)
-    ])
-
-    story = [
-        Paragraph("<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING VOUCHER</b>", styles["Heading1"]),
-        Paragraph(f"<b>Ref:</b> {st.session_state['rep_no']} | <b>Date:</b> {rep_date} ({bs_miti}) | <b>MR:</b> {mr_name} | <b>Route:</b> {selected_area}", styles["Normal"]),
-        Spacer(1, 3*mm)
-    ]
-    
-    # 1. Sales Table
-    s_rows = [["Inv #", "Client Name [Code]", "Address", "Product", "Qty", "FOC", "Rate", "Cash Recd", "Credit", "Total"]]
-    for _, r in ed_s.iterrows():
-        cname, ccode, carea = resolve_client(r.get("Client Name"), clean_str(r.get("Address"), "Birgunj"))
-        pname = clean_str(r.get("Product Name"))
-        q, f_q, rt = clean_num(r.get("Qty")), clean_num(r.get("FOC Qty")), clean_num(r.get("Rate (Rs.)"))
-        c, cm = clean_num(r.get("Cash Recd (Rs.)")), clean_num(r.get("Credit Given (Rs.)"))
-        tb = q * rt; cb = cm if cm > 0 else max(0.0, tb - c)
-        if tb == 0 and (c > 0 or cb > 0): tb = c + cb
-        if cname or pname or q > 0 or f_q > 0 or c > 0 or cb > 0:
-            display_client = f"{cname} [{ccode}]" if ccode and ccode != "WALK-IN" else cname
-            s_rows.append([clean_str(r.get("Invoice No."), "INV-01"), display_client or "Walk-in Party", carea, pname or "General Stock", str(q), str(f_q), money(rt), money(c), money(cb), money(tb)])
-    if len(s_rows) > 1:
-        story.append(Paragraph("<b>1. Sales & Invoicing Ledger</b>", styles["Heading2"]))
-        t_s = Table(s_rows, colWidths=[18*mm, 48*mm, 24*mm, 46*mm, 14*mm, 14*mm, 26*mm, 26*mm, 26*mm, 26*mm], style=t_style)
-        story.extend([t_s, Spacer(1, 3*mm)])
-
-    # 2. Cash Collections Table
-    c_rows = [["Receipt #", "Client / Chemist [Code]", "Payment Mode", "Amount Collected", "Remarks / Ref"]]
-    for _, r in ed_c.iterrows():
-        cname, ccode, _ = resolve_client(r.get("Client Name"))
-        amt = clean_num(r.get("Amount Collected (Rs.)"))
-        if cname or amt > 0:
-            display_client = f"{cname} [{ccode}]" if ccode and ccode != "WALK-IN" else cname
-            c_rows.append([clean_str(r.get("Receipt No."), "REC-01"), display_client or "Chemist", clean_str(r.get("Payment Mode"), "Cash"), money(amt), clean_str(r.get("Remarks / Ref"))])
-    if len(c_rows) > 1:
-        story.append(Paragraph("<b>2. Cash Collections & Payment Receipts</b>", styles["Heading2"]))
-        t_c = Table(c_rows, colWidths=[30*mm, 85*mm, 45*mm, 45*mm, 63*mm], style=t_style)
-        story.extend([t_c, Spacer(1, 3*mm)])
-
-    # 3. Goods Return Table
-    r_rows = [["Client Name [Code]", "Product Name", "Return Qty", "Rate", "Total Value", "Reason / Batch"]]
-    for _, r in ed_r.iterrows():
-        cname, ccode, _ = resolve_client(r.get("Client Name"))
-        pname = clean_str(r.get("Product Name"))
-        rq, r_rt = clean_num(r.get("Return Qty")), clean_num(r.get("Rate (Rs.)"))
-        if cname or pname or rq > 0:
-            display_client = f"{cname} [{ccode}]" if ccode and ccode != "WALK-IN" else cname
-            r_rows.append([display_client or "Chemist", pname or "Returned Item", str(rq), money(r_rt), money(rq * r_rt), clean_str(r.get("Reason"))])
-    if len(r_rows) > 1:
-        story.append(Paragraph("<b>3. Goods Return Ledger</b>", styles["Heading2"]))
-        t_r = Table(r_rows, colWidths=[65*mm, 75*mm, 25*mm, 30*mm, 35*mm, 38*mm], style=t_style)
-        story.extend([t_r, Spacer(1, 3*mm)])
-
-    # 4. Expenses Summary
-    e_rows = [["Details / Particulars", "Paid To / Vendor", "Mode", "Amount", "Remarks"]]
-    for _, r in ed_o.iterrows():
-        amt, det = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Details"))
-        if amt > 0 or det:
-            e_rows.append([det or "Route Expense", clean_str(r.get("Paid To"), "Vendor"), clean_str(r.get("Mode"), "Cash"), money(amt), clean_str(r.get("Remarks"))])
-    if len(e_rows) > 1:
-        story.append(Paragraph("<b>4. Route Operating Expenses</b>", styles["Heading2"]))
-        t_e = Table(e_rows, colWidths=[90*mm, 55*mm, 35*mm, 35*mm, 53*mm], style=t_style)
-        story.extend([t_e, Spacer(1, 3*mm)])
-
-    # 5. Staff Advances Table
-    a_rows = [["Staff / Personnel", "Purpose / Type", "Amount", "Remarks"]]
-    for _, r in ed_st.iterrows():
-        amt, staff = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Staff Name"))
-        if amt > 0 or staff:
-            a_rows.append([staff or "Staff", f"{clean_str(r.get('Category'))} - {clean_str(r.get('Purpose'))}", money(amt), clean_str(r.get("Remarks"))])
-    if len(a_rows) > 1:
-        story.append(Paragraph("<b>5. Staff Advances & Imprest</b>", styles["Heading2"]))
-        t_a = Table(a_rows, colWidths=[65*mm, 80*mm, 45*mm, 78*mm], style=t_style)
-        story.extend([t_a, Spacer(1, 3*mm)])
-
-    # 6. Grand Financial Settlement
-    story.append(Paragraph("<b>6. Grand Financial Settlement</b>", styles["Heading2"]))
-    sum_rows = [
-        ["Total Billed", "Total Cash Recd", "Credit Given", "Goods Return", "Total Outflow", "NET CASH IN HAND"],
-        [money(tot_sales), money(total_gross_cash), money(tot_credit), money(tot_returns), money(tot_disbursed), money(net_cash)]
-    ]
-    t_sum = Table(sum_rows, colWidths=[45*mm, 45*mm, 45*mm, 45*mm, 45*mm, 43*mm], style=[
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0D2818")), 
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white), 
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey), 
-        ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#EAF5EE")), 
-        ('ALIGN', (0,0), (-1,-1), 'CENTER')
-    ])
-    story.extend([t_sum, Spacer(1, 5*mm)])
-    story.append(Table([
-        ["\n____________________", "\n____________________", "\n____________________"], 
-        ["Medical Representative", "Area Sales Manager", "Head Office Audit"]
-    ], colWidths=[89*mm]*3, style=[('ALIGN', (0,0), (-1,-1), 'CENTER')]))
-    doc.build(story)
-    return buf.getvalue()
-
-# Form Submission Controls
-st.write("")
 b1, b2 = st.columns([3, 1])
 with b1:
     if st.button("🚀 CONFIRM & SYNC REPORT TO MASTER", type="primary", use_container_width=True):
         with st.spinner("Syncing to Master Ledger..."):
             ok, count = sync_to_sheets()
             if ok:
-                st.session_state["pdf"] = make_pdf()
-                sync_t = st.session_state.get("sync_time", "")
                 st.balloons()
-                st.success(f"✅ Report `{st.session_state['rep_no']}` synchronized successfully! ({count} records written to Google Sheets at {sync_t})")
+                st.success(f"✅ Report `{st.session_state['rep_no']}` synchronized successfully! ({count} records written to Google Sheets)")
 with b2:
     if st.button("🔄 Reset / Start Blank", use_container_width=True):
         st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
         st.session_state["form_id"] += 1
-        st.session_state.pop("pdf", None)
         st.rerun()
-
-if "pdf" in st.session_state:
-    st.write("")
-    st.download_button("⬇️ DOWNLOAD OFFICIAL SIGN-OFF PDF AUDIT VOUCHER", data=st.session_state["pdf"], file_name=f"{st.session_state['rep_no']}.pdf", mime="application/pdf", use_container_width=True)
