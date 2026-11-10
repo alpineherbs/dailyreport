@@ -193,4 +193,137 @@ with tab2:
 
 # --- TAB 3: RETURNS ---
 with tab3:
-    st.markdown("
+    st.markdown("##### 🔄 Record Goods Return / Damage / Expiry")
+    with st.form("ret_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            sel_client_ret = st.selectbox("Select Chemist / Client", client_options if client_options else ["No Clients Found [PAR-000]"], key="ret_cli")
+            product_name = st.text_input("Returned Product Name", key="ret_prod")
+        with col2:
+            qty = st.number_input("Return Quantity", min_value=1.0, value=1.0, step=1.0, key="ret_qty")
+            rate = st.number_input("Rate per Unit (Rs.)", min_value=0.0, value=0.0, step=10.0, key="ret_rate")
+            reason = st.text_input("Reason for Return", "Expiry / Damage")
+
+        if st.form_submit_button("➕ Add Return Entry", type="primary"):
+            selected_str = sel_client_ret.strip()
+            if "[" in selected_str and "]" in selected_str:
+                parts = selected_str.split("[")
+                c_name = parts[0].strip()
+                c_code = parts[1].replace("]", "").split("—")[0].strip()
+            else:
+                c_name = selected_str
+                matched_c = next((c for c in client_pool if c["name"].lower() == c_name.lower()), {})
+                c_code = matched_c.get("code", "PAR-000")
+
+            tot_ret = qty * rate
+            st.session_state["return_entries"].append({
+                "client_code": c_code,
+                "client_name": c_name,
+                "product_name": product_name,
+                "qty": qty,
+                "rate": rate,
+                "total": tot_ret,
+                "reason": reason
+            })
+            st.success(f"Added return entry for {c_name} [{c_code}]!")
+
+    if st.session_state["return_entries"]:
+        st.markdown("---")
+        st.dataframe(pd.DataFrame(st.session_state["return_entries"]), use_container_width=True, hide_index=True)
+        if st.button("🗑️ Clear Return Entries"):
+            st.session_state["return_entries"] = []
+            st.rerun()
+
+# --- TAB 4: EXPENSES ---
+with tab4:
+    st.markdown("##### 💸 Field & Travel Expenses")
+    with st.form("exp_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            paid_to = st.text_input("Paid To / Vendor", "Fuel Station / Hotel")
+            details = st.text_input("Expense Particulars", "Motorcycle Petrol / Lunch")
+        with col2:
+            amount = st.number_input("Amount (Rs.)", min_value=0.0, value=0.0, step=50.0)
+            remarks = st.text_input("Notes", "Field travel")
+
+        if st.form_submit_button("➕ Add Expense", type="primary"):
+            st.session_state["expense_entries"].append({
+                "paid_to": paid_to, "details": details, "amount": amount, "remarks": remarks
+            })
+            st.success("Added expense entry!")
+
+    if st.session_state["expense_entries"]:
+        st.markdown("---")
+        st.dataframe(pd.DataFrame(st.session_state["expense_entries"]), use_container_width=True, hide_index=True)
+        if st.button("🗑️ Clear Expenses"):
+            st.session_state["expense_entries"] = []
+            st.rerun()
+
+# --- TAB 5: STAFF ADVANCES ---
+with tab5:
+    st.markdown("##### 👤 Staff Advances & Adjustments")
+    with st.form("adv_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            personnel_name = st.text_input("Staff Name", staff_name)
+            purpose = st.text_input("Purpose", "Field cash advance")
+        with col2:
+            amount = st.number_input("Advance Amount (Rs.)", min_value=0.0, value=0.0, step=100.0)
+            remarks = st.text_input("Advance Remarks", "Approved")
+
+        if st.form_submit_button("➕ Add Advance Entry", type="primary"):
+            st.session_state["advance_entries"].append({
+                "personnel_name": personnel_name, "purpose": purpose, "amount": amount, "remarks": remarks
+            })
+            st.success("Added staff advance entry!")
+
+    if st.session_state["advance_entries"]:
+        st.markdown("---")
+        st.dataframe(pd.DataFrame(st.session_state["advance_entries"]), use_container_width=True, hide_index=True)
+        if st.button("🗑️ Clear Advances"):
+            st.session_state["advance_entries"] = []
+            st.rerun()
+
+# --- TAB 6: REVIEW & SUBMIT ---
+with tab6:
+    st.markdown("##### 🚀 Final Review & Sync to Google Sheets")
+    
+    total_sales_amt = sum(s["total_sale"] for s in st.session_state["sales_entries"])
+    total_col_amt = sum(c["amount"] for c in st.session_state["collection_entries"])
+    total_ret_amt = sum(r["total"] for r in st.session_state["return_entries"])
+    total_exp_amt = sum(e["amount"] for e in st.session_state["expense_entries"])
+    total_adv_amt = sum(a["amount"] for a in st.session_state["advance_entries"])
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Total Sales", f"Rs. {total_sales_amt:,.2f}")
+    c2.metric("Collections", f"Rs. {total_col_amt:,.2f}")
+    c3.metric("Returns", f"Rs. {total_ret_amt:,.2f}")
+    c4.metric("Expenses", f"Rs. {total_exp_amt:,.2f}")
+    c5.metric("Advances", f"Rs. {total_adv_amt:,.2f}")
+
+    st.write("")
+    if st.button("🚀 Push Closing Payload to Google Sheets", type="primary", use_container_width=True):
+        payload = {
+            "date": str(date_ad),
+            "bs_date": bs_date,
+            "report_no": report_no,
+            "staff_name": staff_name,
+            "sales": st.session_state["sales_entries"],
+            "collections": st.session_state["collection_entries"],
+            "returns": st.session_state["return_entries"],
+            "expenses": st.session_state["expense_entries"],
+            "advances": st.session_state["advance_entries"]
+        }
+
+        with st.spinner("Syncing closing data to Google Sheet master log..."):
+            try:
+                response = requests.post(WEBHOOK_URL, json=payload, timeout=15)
+                res_json = response.json()
+                if res_json.get("status") == "success":
+                    st.success(f"Successfully synced {res_json.get('records_synced', 0)} records to Google Sheets!")
+                    for key in ["sales_entries", "collection_entries", "return_entries", "expense_entries", "advance_entries"]:
+                        st.session_state[key] = []
+                else:
+                    st.error(f"Sync error from script: {res_json.get('message', 'Unknown error')}")
+            except Exception as e:
+                st.error(f"Connection failed: {str(e)}")
