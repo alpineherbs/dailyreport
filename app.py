@@ -13,7 +13,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 st.set_page_config(page_title="ALPINE HERBS - Daily Field Closing", page_icon="🌿", layout="wide")
 
-# --- CREDENTIALS & CONSTANTS ---
+# --- CENTRAL CONFIGURATION ---
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyxbrlC6Ayn-ShWWBLGXGNBd9wnqc3m4lXRyfE6U6Fsbtnbea5R3_JBvq0ggKitR5pD/exec"
+SHEET_ID = "1cpPYFS9EkajB5tGfMnReIJ71cmB5djz6oaMvvEoqs6A"
+
 USERS = {
     "Alpine": "AHP@123",
     "Pritam": "Pritam@2024",
@@ -21,53 +24,84 @@ USERS = {
     "Manager": "Alpine@Birgunj"
 }
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyxbrlC6Ayn-ShWWBLGXGNBd9wnqc3m4lXRyfE6U6Fsbtnbea5R3_JBvq0ggKitR5pD/exec"
-SHEET_ID = "1cpPYFS9EkajB5tGfMnReIJ71cmB5djz6oaMvvEoqs6A"
-
-# --- EXPANDED A-TO-Z MASTER DIRECTORY ---
+# --- COMPLETE REAL CLIENT DIRECTORY (BARA & PARSA DISTRICTS) ---
 DEFAULT_CLIENT_DB = [
-    {"name": "Aarav Pharma", "code": "PAR-001", "area": "Birgunj", "dues": 4500},
-    {"name": "Ashok Medical Hall", "code": "PAR-002", "area": "Naukatola", "dues": 12230},
-    {"name": "Apex Health Care", "code": "BAR-004", "area": "Kalaiya", "dues": 3100},
-    {"name": "Baba Medical Store", "code": "PAR-005", "area": "Birgunj", "dues": 8500},
-    {"name": "Bara Pharma Distributors", "code": "BAR-007", "area": "Simara", "dues": 15400},
-    {"name": "Birgunj Health Clinic", "code": "PAR-006", "area": "Birgunj", "dues": 9200},
-    {"name": "City Medical Hall", "code": "PAR-008", "area": "Birgunj", "dues": 6700},
-    {"name": "Care & Cure Pharmacy", "code": "BAR-009", "area": "Jeetpur", "dues": 4300},
-    {"name": "Dev Medical", "code": "BAR-003", "area": "Kalaiya", "dues": 2030},
-    {"name": "Durga Medical Store", "code": "PAR-010", "area": "Birgunj", "dues": 11500},
-    {"name": "Everest Pharmacy", "code": "PAR-011", "area": "Pokhariya", "dues": 5200},
-    {"name": "Friends Medical Hall", "code": "PAR-012", "area": "Birgunj", "dues": 3400},
-    {"name": "Ganesh Srestha", "code": "PAR-015", "area": "Birgunj", "dues": 63390},
-    {"name": "Gupta Medical Store", "code": "BAR-016", "area": "Kalaiya", "dues": 7800},
-    {"name": "Himal Health Clinic", "code": "PAR-017", "area": "Naukatola", "dues": 4100},
-    {"name": "Ideal Pharmacy", "code": "PAR-018", "area": "Birgunj", "dues": 6900},
-    {"name": "Janta Medical Hall", "code": "BAR-019", "area": "Jeetpur", "dues": 8300},
-    {"name": "Jeevan Raksha Clinic", "code": "PAR-020", "area": "Birgunj", "dues": 12800},
-    {"name": "Kalaiya Medical Centre", "code": "BAR-021", "area": "Kalaiya", "dues": 9400},
-    {"name": "Krishna Pharmacy", "code": "PAR-022", "area": "Langada Chouk", "dues": 14100},
-    {"name": "Laxmi Medical Store", "code": "PAR-023", "area": "Birgunj", "dues": 18500},
-    {"name": "Maa Durga Pharma", "code": "BAR-024", "area": "Simara", "dues": 6200},
-    {"name": "Mahir Health Clinic", "code": "BAR-002", "area": "Jeetpur", "dues": 7105},
-    {"name": "Naresh Medical", "code": "BAR-001", "area": "Kalaiya", "dues": 3070},
-    {"name": "Nepal Health Care", "code": "PAR-025", "area": "Birgunj", "dues": 21400},
-    {"name": "Om Sai Medical", "code": "PAR-026", "area": "Birgunj", "dues": 5600},
-    {"name": "Parsa Medical Store", "code": "PAR-027", "area": "Birgunj", "dues": 33200},
-    {"name": "Prakash Pharmacy", "code": "BAR-028", "area": "Kalaiya", "dues": 4800},
-    {"name": "Quality Health Pharma", "code": "PAR-029", "area": "Birgunj", "dues": 11300},
-    {"name": "Radhey Medical", "code": "BAR-033", "area": "Simara", "dues": 7500},
-    {"name": "Roshan Pharmacy", "code": "PAR-032", "area": "Birgunj", "dues": 74290},
-    {"name": "Sandip Medical Hall", "code": "PAR-035", "area": "Langada Chouk", "dues": 30195},
-    {"name": "Shiva Medical Store", "code": "PAR-036", "area": "Pokhariya", "dues": 8900},
-    {"name": "Tirupati Medical Hall", "code": "PAR-037", "area": "Naukatola", "dues": 6400},
-    {"name": "Universal Health Clinic", "code": "PAR-038", "area": "Birgunj", "dues": 15700},
-    {"name": "Verma Medical Store", "code": "BAR-039", "area": "Jeetpur", "dues": 9100},
-    {"name": "Welfare Pharmacy", "code": "PAR-040", "area": "Birgunj", "dues": 4600},
-    {"name": "Yadav Medical Hall", "code": "BAR-041", "area": "Kalaiya", "dues": 11200},
-    {"name": "Zenith Health Care", "code": "PAR-042", "area": "Birgunj", "dues": 7300}
+    # BARA DISTRICT
+    {"name": "Naresh Medical", "code": "BAR-001", "area": "Kalaiya", "district": "Bara", "phone": "9807267001", "dues": 3100},
+    {"name": "Mahir Health Clinic", "code": "BAR-002", "area": "Jeetpur", "district": "Bara", "phone": "9807100296", "dues": 8165},
+    {"name": "Dev Medical", "code": "BAR-003", "area": "Kalaiya", "district": "Bara", "phone": "9845227985", "dues": 1500},
+    {"name": "Nirajan Pharmacy", "code": "BAR-004", "area": "Bakuliya", "district": "Bara", "phone": "9804242586", "dues": 550},
+    {"name": "Hariom Medical", "code": "BAR-005", "area": "Kolvi", "district": "Bara", "phone": "9811229323", "dues": 2300},
+    {"name": "S.K.S Pharma", "code": "BAR-006", "area": "Parsauni", "district": "Bara", "phone": "", "dues": 1175},
+    {"name": "Aayan First Aid Center", "code": "BAR-007", "area": "Simara", "district": "Bara", "phone": "", "dues": 2060},
+    {"name": "Rupa Medical Hall", "code": "BAR-008", "area": "Simara", "district": "Bara", "phone": "", "dues": 5515},
+    {"name": "Sanjeevani Clinic", "code": "BAR-009", "area": "Simara", "district": "Bara", "phone": "9845130209", "dues": 2195},
+    {"name": "Ale Health Clinic", "code": "BAR-010", "area": "Ganj Bhawanipur", "district": "Bara", "phone": "", "dues": 1645},
+    {"name": "Alex Medical Hall", "code": "BAR-011", "area": "Bagrampur", "district": "Bara", "phone": "", "dues": 18000},
+    {"name": "Kaliyani Medical Hall", "code": "BAR-012", "area": "Kolvi", "district": "Bara", "phone": "", "dues": 15580},
+    {"name": "Shohalal Medical Hall", "code": "BAR-013", "area": "Ganj Bhawanipur", "district": "Bara", "phone": "9814286651", "dues": 7175},
+    {"name": "Everest Health Clinic", "code": "BAR-014", "area": "Kalaiya", "district": "Bara", "phone": "", "dues": 2635},
+    {"name": "Roman Surgical", "code": "BAR-015", "area": "Khopawa", "district": "Bara", "phone": "9821231370", "dues": 1660},
+    {"name": "Nimash Medical", "code": "BAR-016", "area": "Simara", "district": "Bara", "phone": "9845120836", "dues": 4620},
+    {"name": "Advance Poli Clinic", "code": "BAR-017", "area": "Raghunathpur", "district": "Bara", "phone": "9809153231", "dues": 4310},
+    {"name": "Prithvi Medical Hall", "code": "BAR-018", "area": "Jaitapur", "district": "Bara", "phone": "", "dues": 6745},
+    {"name": "Safe Life Hospital", "code": "BAR-019", "area": "Benauli", "district": "Bara", "phone": "", "dues": 740},
+    {"name": "Alina Health Clinic", "code": "BAR-020", "area": "Kalaiya", "district": "Bara", "phone": "", "dues": 8250},
+    {"name": "Hargendra Pande Medical", "code": "BAR-021", "area": "Rautahar", "district": "Bara", "phone": "", "dues": 500},
+    {"name": "Jungbahadur Medical", "code": "BAR-022", "area": "Bagrampur", "district": "Bara", "phone": "", "dues": 200},
+    {"name": "Aarabh Pharmacy", "code": "BAR-023", "area": "Nijgadh", "district": "Bara", "phone": "9855019764", "dues": 36725},
+    {"name": "Aarabh Pharmacy (Narayani)", "code": "BAR-024", "area": "Nijgadh", "district": "Bara", "phone": "9855019764", "dues": 25915},
+    {"name": "Sanniya Medical Hall", "code": "BAR-025", "area": "Jeetpur", "district": "Bara", "phone": "", "dues": 3460},
+    {"name": "Bala Ji Medical Hall", "code": "BAR-026", "area": "Aarnawa Chouk", "district": "Bara", "phone": "", "dues": 3195},
+    {"name": "Sapna Health Clinic", "code": "BAR-027", "area": "Bariyarpur", "district": "Bara", "phone": "", "dues": 1365},
+    {"name": "Gudi Pharmacy", "code": "BAR-028", "area": "Bariyarpur", "district": "Bara", "phone": "", "dues": 0},
+    {"name": "OM Shivsakti Pharmacy", "code": "BAR-029", "area": "Kalaiya", "district": "Bara", "phone": "", "dues": 3680},
+
+    # PARSA DISTRICT
+    {"name": "Aditi Pharmacy", "code": "PAR-001", "area": "Manwa Bazar", "district": "Parsa", "phone": "", "dues": 500},
+    {"name": "Ashok Medical Hall", "code": "PAR-002", "area": "Naukatola", "district": "Parsa", "phone": "", "dues": 12230},
+    {"name": "Sudama Surgical", "code": "PAR-003", "area": "Neutan", "district": "Parsa", "phone": "", "dues": 20200},
+    {"name": "B.S Health Clinic", "code": "PAR-004", "area": "Paterwa", "district": "Parsa", "phone": "", "dues": 24665},
+    {"name": "Pandey Medical Hall", "code": "PAR-005", "area": "Badanihar", "district": "Parsa", "phone": "", "dues": 7065},
+    {"name": "Bhawani Medical Hall", "code": "PAR-006", "area": "Bharatwa", "district": "Parsa", "phone": "", "dues": 9950},
+    {"name": "Chandip Medical Hall", "code": "PAR-007", "area": "Kathmandu Tol", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Dinamik Pharma", "code": "PAR-008", "area": "Sano Sugauli", "district": "Parsa", "phone": "", "dues": 15815},
+    {"name": "Everest Pharmacy", "code": "PAR-009", "area": "Birwa Chouk", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Fatepur Health Clinic", "code": "PAR-010", "area": "Fatepur", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Gadi Mai Medical Hall", "code": "PAR-011", "area": "Pachgawa", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Ganesh Srestha", "code": "PAR-012", "area": "Birgunj", "district": "Parsa", "phone": "", "dues": 63390},
+    {"name": "Harnaiya Aashirvad Medical", "code": "PAR-013", "area": "Harnaiya", "district": "Parsa", "phone": "", "dues": 4565},
+    {"name": "Madhav Medical Hall", "code": "PAR-014", "area": "Pachgawa", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Nawal Kishor Medical Hall", "code": "PAR-015", "area": "Pachgawa", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Nausad Medical Hall", "code": "PAR-016", "area": "Rangapur", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Kohinoor Medical Hall", "code": "PAR-017", "area": "Milan Chouk", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Sibil Medical Hall", "code": "PAR-018", "area": "Milan Chouk", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Noor Tamana Health Clinic", "code": "PAR-019", "area": "Derbana", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Aftab Medical Hall", "code": "PAR-020", "area": "Derbana", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Pandey Medical Hall (Murli)", "code": "PAR-021", "area": "Murli", "district": "Parsa", "phone": "", "dues": 700},
+    {"name": "Puja Medical Hall", "code": "PAR-022", "area": "Fatepur", "district": "Parsa", "phone": "", "dues": 1030},
+    {"name": "Raina Health Clinic", "code": "PAR-023", "area": "Veda Tol", "district": "Parsa", "phone": "", "dues": 3672},
+    {"name": "Rihansh Medical Hall", "code": "PAR-024", "area": "Birgunj", "district": "Parsa", "phone": "", "dues": 1740},
+    {"name": "Roshan Pharmacy", "code": "PAR-025", "area": "Birgunj", "district": "Parsa", "phone": "", "dues": 74290},
+    {"name": "Samir Medical Hall", "code": "PAR-026", "area": "Pachgawa", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Sandip Medical Hall", "code": "PAR-027", "area": "Langada Chouk", "district": "Parsa", "phone": "", "dues": 30195},
+    {"name": "Sohil Medical Hall", "code": "PAR-028", "area": "Pokhariya", "district": "Parsa", "phone": "", "dues": 11600},
+    {"name": "Tarai Medical Hall", "code": "PAR-029", "area": "Manwa Bazar", "district": "Parsa", "phone": "", "dues": 235},
+    {"name": "Tarkeshwar Medical Hall", "code": "PAR-030", "area": "Nagwa", "district": "Parsa", "phone": "", "dues": 8885},
+    {"name": "Jitendra Health Clinic", "code": "PAR-031", "area": "Mahuwan", "district": "Parsa", "phone": "", "dues": 4565},
+    {"name": "Anshari Medical Hall", "code": "PAR-032", "area": "Derbana", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Jay Shree Gadhi Mai Medical", "code": "PAR-033", "area": "Lautan", "district": "Parsa", "phone": "", "dues": 1575},
+    {"name": "Dinanath Medical Hall", "code": "PAR-034", "area": "Harpur", "district": "Parsa", "phone": "", "dues": 1740},
+    {"name": "Shahu Pharmacy", "code": "PAR-035", "area": "Dokaila", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "G.K.S Pharmacy", "code": "PAR-036", "area": "Narahi Bazar", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Bagmorcha Mai Medical", "code": "PAR-037", "area": "Bagmorcha", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Pushpa Medical Hall", "code": "PAR-038", "area": "Kathariya", "district": "Parsa", "phone": "", "dues": 105},
+    {"name": "Satiya Health Clinic", "code": "PAR-039", "area": "Lautan", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Anil Medical Hall", "code": "PAR-040", "area": "Gadwal", "district": "Parsa", "phone": "", "dues": 0},
+    {"name": "Harnaiya City Hospital", "code": "PAR-041", "area": "Harnaiya", "district": "Parsa", "phone": "", "dues": 0}
 ]
 
-# --- CLEANING & NORMALIZATION UTILITIES ---
+# --- UTILITY FUNCTIONS ---
 def clean_str(val, default=""):
     if pd.isna(val) or val is None: return default
     s = str(val).strip()
@@ -92,7 +126,6 @@ def get_nepali_miti(ad_date):
 
 money = lambda v: f"Rs. {clean_num(v):,.2f}"
 
-# Background Loader: Reads live Google Sheet 'Clients' tab if available
 @st.cache_data(ttl=120)
 def load_live_clients():
     try:
@@ -108,6 +141,8 @@ def load_live_clients():
                         "name": str(name_val).strip(),
                         "code": str(r.get("code", "PAR-099")).strip().upper(),
                         "area": str(r.get("area", "Birgunj")).strip(),
+                        "district": str(r.get("district", "Parsa")).strip(),
+                        "phone": str(r.get("phone", "")).strip(),
                         "dues": clean_num(r.get("dues", 0.0))
                     })
             if live_list:
@@ -122,7 +157,7 @@ if "client_db" not in st.session_state:
 if "form_id" not in st.session_state:
     st.session_state["form_id"] = 0
 
-# Client Name & Code Resolver
+# Client Name, Code, and Area Parser
 def resolve_client(raw_val, default_area="Birgunj"):
     s = clean_str(raw_val)
     if not s or s.lower() == "other / walk-in":
@@ -251,7 +286,7 @@ cur_user = st.session_state.get("user", "Staff")
 if "rep_no" not in st.session_state:
     st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
-# --- SIDEBAR: DIRECTORY & REGISTRATION ---
+# --- SIDEBAR: DUES LOOKUP & REGISTER NEW CHEMIST ---
 with st.sidebar:
     st.markdown("#### Active Session")
     st.markdown(f"""<div class="user-card">
@@ -266,11 +301,12 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.markdown("#### 📋 Chemist Directory Lookup")
-    sq = st.text_input("Search Chemist / Town", placeholder="Type name or town...").strip().lower()
-    matches = [c for c in st.session_state["client_db"] if sq in c['name'].lower() or sq in c['area'].lower()] if sq else st.session_state["client_db"]
+    st.markdown("#### 📋 Client Dues Directory")
+    sq = st.text_input("Search Chemist / Town / Code", placeholder="Type name or town...").strip().lower()
+    matches = [c for c in st.session_state["client_db"] if sq in c['name'].lower() or sq in c['area'].lower() or sq in c['code'].lower()] if sq else st.session_state["client_db"]
     for item in matches[:5]:
-        st.markdown(f"**{item['name']}** (`{item['code']}`)\n{item['area']} | Due: **Rs. {item['dues']:,}**")
+        phone_txt = f" | 📞 {item['phone']}" if item.get('phone') else ""
+        st.markdown(f"**{item['name']}** (`{item['code']}`)\n📍 {item['area']}{phone_txt}\n💰 Dues: **Rs. {item['dues']:,}**")
         st.write("---")
 
     with st.expander("➕ Register New Chemist"):
@@ -278,6 +314,7 @@ with st.sidebar:
             n_name = st.text_input("Chemist Name*")
             n_code = st.text_input("Code*", value=f"PAR-{len(st.session_state['client_db'])+10:03d}")
             n_area = st.text_input("Town / Area*", value="Birgunj")
+            n_phone = st.text_input("Mobile No.")
             n_due  = st.number_input("Opening Due (Rs.)", min_value=0.0, value=0.0, step=500.0)
             if st.form_submit_button("Save Chemist"):
                 if n_name.strip():
@@ -285,6 +322,8 @@ with st.sidebar:
                         "name": n_name.strip(),
                         "code": n_code.strip().upper(),
                         "area": n_area.strip(),
+                        "district": "Parsa",
+                        "phone": n_phone.strip(),
                         "dues": n_due
                     })
                     st.success(f"✅ Registered {n_name} ({n_code})")
@@ -309,7 +348,7 @@ INIT_RETURNS = pd.DataFrame([
 INIT_OFFICE = pd.DataFrame([{"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
 INIT_STAFF = pd.DataFrame([{"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
 
-# Main Header Banner
+# Professional Main Header
 st.markdown("""
 <div class="main-header-banner">
     <div>
