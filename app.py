@@ -16,10 +16,11 @@ USERS = {
     "Manager": "Alpine@Birgunj"
 }
 
-# Silent backend endpoint (No UI exposure)
+# Silent backend endpoint
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzorFkbj5in7NdNAsh_zvSPMZSzM1HmzVTCnoCCUQ_85izF9C1GrC1BB00WvLiRwri5/exec"
 
-CLIENT_DB = [
+# Master Chemist Directory
+DEFAULT_CLIENT_DB = [
     {"name": "Naresh Medical", "code": "BAR-001", "area": "Kalaiya", "dues": 3070},
     {"name": "Mahir Health Clinic", "code": "BAR-002", "area": "Jeetpur", "dues": 7105},
     {"name": "Dev Medical", "code": "BAR-003", "area": "Kalaiya", "dues": 2030},
@@ -28,6 +29,12 @@ CLIENT_DB = [
     {"name": "Roshan Pharmacy", "code": "PAR-032", "area": "Birgunj", "dues": 74290},
     {"name": "Sandip Medical Hall", "code": "PAR-035", "area": "Langada Chouk", "dues": 30195}
 ]
+
+if "client_db" not in st.session_state:
+    st.session_state["client_db"] = DEFAULT_CLIENT_DB.copy()
+
+if "form_id" not in st.session_state:
+    st.session_state["form_id"] = 0
 
 def clean_str(val, default=""):
     if pd.isna(val) or val is None: return default
@@ -52,7 +59,25 @@ def get_nepali_miti(ad_date):
 
 money = lambda v: f"Rs. {clean_num(v):,.2f}"
 
-# Refined Professional Theme & Header Layout Styling
+# Helper to decompose "Chemist Name [CODE]" into clean components
+def resolve_client(raw_val, default_area="Birgunj"):
+    s = clean_str(raw_val)
+    if not s:
+        return "", "", default_area
+    if "[" in s and s.endswith("]"):
+        parts = s.rsplit("[", 1)
+        cname = parts[0].strip()
+        ccode = parts[1].replace("]", "").strip()
+        for item in st.session_state["client_db"]:
+            if item["code"].lower() == ccode.lower():
+                return cname, ccode, item.get("area", default_area)
+        return cname, ccode, default_area
+    for item in st.session_state["client_db"]:
+        if item["name"].lower() == s.lower():
+            return item["name"], item["code"], item.get("area", default_area)
+    return s, "WALK-IN", default_area
+
+# Styling
 st.markdown("""<style>
 #MainMenu, footer { visibility: hidden; }
 header { visibility: visible; }
@@ -157,7 +182,7 @@ cur_user = st.session_state.get("user", "Staff")
 if "rep_no" not in st.session_state:
     st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
 
-# --- SIDEBAR (CLEAN SESSION & CLIENT DIRECTORY ONLY) ---
+# --- SIDEBAR: CLIENT LOOKUP & NEW REGISTRATION ---
 with st.sidebar:
     st.markdown("#### Active Session")
     st.markdown(f"""<div class="user-card">
@@ -172,12 +197,33 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.markdown("#### 📋 Client Dues Lookup")
-    sq = st.text_input("Search Chemist / Town", placeholder="e.g. Naresh, Kalaiya").strip().lower()
-    matches = [c for c in CLIENT_DB if sq in c['name'].lower() or sq in c['area'].lower()] if sq else CLIENT_DB
-    for item in matches[:6]:
+    st.markdown("#### 📋 Chemist Directory Lookup")
+    sq = st.text_input("Search Chemist / Town", placeholder="Type name or area...").strip().lower()
+    matches = [c for c in st.session_state["client_db"] if sq in c['name'].lower() or sq in c['area'].lower()] if sq else st.session_state["client_db"]
+    for item in matches[:5]:
         st.markdown(f"**{item['name']}** (`{item['code']}`)\n{item['area']} | Due: **Rs. {item['dues']:,}**")
         st.write("---")
+
+    with st.expander("➕ Register New Chemist"):
+        with st.form("new_chem_form", clear_on_submit=True):
+            n_name = st.text_input("Chemist / Client Name*")
+            n_code = st.text_input("Code*", value=f"PAR-{len(st.session_state['client_db'])+10:03d}")
+            n_area = st.text_input("Town / Area*", value="Birgunj")
+            n_due  = st.number_input("Opening Due (Rs.)", min_value=0.0, value=0.0, step=500.0)
+            if st.form_submit_button("Save Chemist"):
+                if n_name.strip():
+                    st.session_state["client_db"].append({
+                        "name": n_name.strip(),
+                        "code": n_code.strip().upper(),
+                        "area": n_area.strip(),
+                        "dues": n_due
+                    })
+                    st.success(f"✅ Registered {n_name} ({n_code})")
+                    st.rerun()
+
+# Build dropdown recommendation options: "Name  [CODE]"
+# When user types first letters (e.g. 'N'), Streamlit auto-recommends "Naresh Medical  [BAR-001]"
+CLIENT_OPTIONS = [""] + [f"{c['name']}  [{c['code']}]" for c in st.session_state["client_db"]] + ["Other / Walk-in"]
 
 # Initial DataFrames
 INIT_SALES = pd.DataFrame([
@@ -198,7 +244,7 @@ INIT_RETURNS = pd.DataFrame([
 INIT_OFFICE = pd.DataFrame([{"Details": "", "Paid To": "Vendor", "Mode": "Cash", "Amount (Rs.)": 0.0, "Remarks": ""}])
 INIT_STAFF = pd.DataFrame([{"Staff Name": "", "Purpose": "Tour Advance", "Category": "Staff Advance", "Amount (Rs.)": 0.0, "Remarks": ""}])
 
-# Professional Main Header (Full Banner, No Clipped Margin)
+# Professional Main Header
 st.markdown("""
 <div class="main-header-banner">
     <div>
@@ -222,6 +268,17 @@ with c4:
 with c5:
     st.text_input("Report Ref", value=st.session_state["rep_no"], disabled=True)
 
+# Reusable Client Column Config for Data Editors
+client_col_config = {
+    "Client Name": st.column_config.SelectboxColumn(
+        "Client Name (Type initial to select)",
+        help="Type initial letter (e.g., 'N' for Naresh). Code is automatically recommended and entered.",
+        width="large",
+        options=CLIENT_OPTIONS,
+        required=False
+    )
+}
+
 # Data Entry Tabs
 t1, t2, t3, t4 = st.tabs([
     "🛒 1. Sales & Collections",
@@ -230,28 +287,51 @@ t1, t2, t3, t4 = st.tabs([
     "🔄 4. Goods Return (Clients)"
 ])
 
+fid = st.session_state["form_id"]
+
 with t1:
     st.markdown("##### 🛒 Sales Ledger (With FOC Bonus Tracking)")
-    st.caption("FOC Qty tracks promotional items and does not inflate billed totals. Empty rows are skipped.")
-    ed_s = st.data_editor(INIT_SALES, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_s")
+    st.caption("💡 **Tip:** Click on 'Client Name' and type the first letter to quickly select chemists with their code automatically linked.")
+    ed_s = st.data_editor(
+        INIT_SALES,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"ed_s_{fid}",
+        column_config=client_col_config
+    )
 
     st.write("")
     st.markdown("##### 💵 Dedicated Cash Collections & Payment Receipts")
     st.caption("Record direct payments and dues recovered from clients with receipt numbers.")
-    ed_c = st.data_editor(INIT_COLLECTIONS, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_c")
+    ed_c = st.data_editor(
+        INIT_COLLECTIONS,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"ed_c_{fid}",
+        column_config=client_col_config
+    )
 
 with t2:
     st.caption("Record route fuel, food, logistics, and operational vendor costs.")
-    ed_o = st.data_editor(INIT_OFFICE, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_o")
+    ed_o = st.data_editor(INIT_OFFICE, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_o_{fid}")
 
 with t3:
     st.caption("Record daily allowances, per-diem, and tour advances given to personnel.")
-    ed_st = st.data_editor(INIT_STAFF, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_st")
+    ed_st = st.data_editor(INIT_STAFF, num_rows="dynamic", use_container_width=True, hide_index=True, key=f"ed_st_{fid}")
 
 with t4:
     st.markdown("##### 🔄 Goods Return Ledger (Client Product Returns)")
     st.caption("Record stock returned by clients due to expiry, damage, or slow turnover.")
-    ed_r = st.data_editor(INIT_RETURNS, num_rows="dynamic", use_container_width=True, hide_index=True, key="ed_r")
+    ed_r = st.data_editor(
+        INIT_RETURNS,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=f"ed_r_{fid}",
+        column_config=client_col_config
+    )
 
 # Financial Calculations
 s_qty = ed_s["Qty"].apply(clean_num)
@@ -282,7 +362,7 @@ net_cash = total_gross_cash - tot_disbursed
 with t1:
     st.info(f"📋 Live Cash Breakdown: Direct Sales Cash: {money(tot_sales_cash)} + Dues Receipts: {money(tot_receipt_cash)} = Total Cash: {money(total_gross_cash)} | Credit Given: {money(tot_credit)}")
 
-# Corporate Financial Summary Cards (Bottom of Form)
+# Corporate Financial Summary Cards
 st.markdown("### 📊 Financial Closing Summary")
 sb1, sb2, sb3 = st.columns(3)
 with sb1:
@@ -308,11 +388,13 @@ with sb3:
 
 if net_cash < 0: st.warning("⚠️ Warning: Route disbursements exceed total cash collected today. Net Cash is negative.")
 
-# Background Synchronization Function
+# Background Synchronization Function with Auto-Extracted Client Codes
 def sync_to_sheets():
     s_items = []
     for _, r in ed_s.iterrows():
-        cname, pname = clean_str(r.get("Client Name")), clean_str(r.get("Product Name"))
+        raw_client = r.get("Client Name")
+        cname, ccode, carea = resolve_client(raw_client, clean_str(r.get("Address"), "Birgunj"))
+        pname = clean_str(r.get("Product Name"))
         q, f_q, rt = clean_num(r.get("Qty")), clean_num(r.get("FOC Qty")), clean_num(r.get("Rate (Rs.)"))
         c, cm = clean_num(r.get("Cash Recd (Rs.)")), clean_num(r.get("Credit Given (Rs.)"))
         tb = q * rt
@@ -320,43 +402,69 @@ def sync_to_sheets():
         if tb == 0 and (c > 0 or cb > 0): tb = c + cb
         if cname or pname or q > 0 or f_q > 0 or c > 0 or cb > 0:
             s_items.append({
-                "invoice": clean_str(r.get("Invoice No."), "INV-01"), "client_name": cname or "Walk-in Party",
-                "address": clean_str(r.get("Address"), "Birgunj"), "product_name": pname or "General Stock",
-                "qty": q, "foc_qty": f_q, "rate": rt, "cash_collected": c, "credit_given": cb, "total_sale": tb
+                "invoice": clean_str(r.get("Invoice No."), "INV-01"),
+                "client_name": cname or "Walk-in Party",
+                "client_code": ccode,
+                "address": carea,
+                "product_name": pname or "General Stock",
+                "qty": q, "foc_qty": f_q, "rate": rt,
+                "cash_collected": c, "credit_given": cb, "total_sale": tb
             })
 
     c_items = []
     for _, r in ed_c.iterrows():
-        cname, rec = clean_str(r.get("Client Name")), clean_str(r.get("Receipt No."), "REC-01")
+        raw_client = r.get("Client Name")
+        cname, ccode, _ = resolve_client(raw_client)
+        rec = clean_str(r.get("Receipt No."), "REC-01")
         amt = clean_num(r.get("Amount Collected (Rs.)"))
         if cname or amt > 0:
             c_items.append({
-                "receipt_no": rec, "client_name": cname or "Chemist",
-                "mode": clean_str(r.get("Payment Mode"), "Cash"), "amount": amt,
+                "receipt_no": rec,
+                "client_name": cname or "Chemist",
+                "client_code": ccode,
+                "mode": clean_str(r.get("Payment Mode"), "Cash"),
+                "amount": amt,
                 "remarks": clean_str(r.get("Remarks / Ref"), "Old Dues")
             })
 
     r_items = []
     for _, r in ed_r.iterrows():
-        cname, pname = clean_str(r.get("Client Name")), clean_str(r.get("Product Name"))
+        raw_client = r.get("Client Name")
+        cname, ccode, _ = resolve_client(raw_client)
+        pname = clean_str(r.get("Product Name"))
         rq, r_rt = clean_num(r.get("Return Qty")), clean_num(r.get("Rate (Rs.)"))
         if cname or pname or rq > 0:
             r_items.append({
-                "client_name": cname or "Chemist", "product_name": pname or "Returned Item",
-                "qty": rq, "rate": r_rt, "total": rq * r_rt, "reason": clean_str(r.get("Reason"), "Expiry / Breakage")
+                "client_name": cname or "Chemist",
+                "client_code": ccode,
+                "product_name": pname or "Returned Item",
+                "qty": rq, "rate": r_rt, "total": rq * r_rt,
+                "reason": clean_str(r.get("Reason"), "Expiry / Breakage")
             })
 
     e_items = []
     for _, r in ed_o.iterrows():
         amt, det = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Details"))
         if amt > 0 or det:
-            e_items.append({"details": det or "Route Expense", "paid_to": clean_str(r.get("Paid To"), "Vendor"), "mode": clean_str(r.get("Mode"), "Cash"), "amount": amt, "remarks": clean_str(r.get("Remarks"))})
+            e_items.append({
+                "details": det or "Route Expense",
+                "paid_to": clean_str(r.get("Paid To"), "Vendor"),
+                "mode": clean_str(r.get("Mode"), "Cash"),
+                "amount": amt,
+                "remarks": clean_str(r.get("Remarks"))
+            })
 
     a_items = []
     for _, r in ed_st.iterrows():
         amt, staff = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Staff Name"))
         if amt > 0 or staff:
-            a_items.append({"personnel_name": staff or "Staff", "purpose": clean_str(r.get("Purpose"), "Tour Advance"), "type": clean_str(r.get("Category"), "Staff Advance"), "amount": amt, "remarks": clean_str(r.get("Remarks"))})
+            a_items.append({
+                "personnel_name": staff or "Staff",
+                "purpose": clean_str(r.get("Purpose"), "Tour Advance"),
+                "type": clean_str(r.get("Category"), "Staff Advance"),
+                "amount": amt,
+                "remarks": clean_str(r.get("Remarks"))
+            })
 
     if not (s_items or c_items or r_items or e_items or a_items):
         st.warning("⚠️ No valid entries to sync. Please fill in records first.")
@@ -373,7 +481,7 @@ def sync_to_sheets():
         res = requests.post(WEB_APP_URL, json=payload, timeout=25, allow_redirects=True)
         raw_text = res.text.strip()
         if "<!DOCTYPE html" in raw_text or "accounts.google.com" in raw_text:
-            st.error("❌ Google Permission Error: Access restricted. Set 'Who has access' to 'Anyone' in Apps Script.")
+            st.error("❌ Google Permission Error: Set 'Who has access' to 'Anyone' in Apps Script.")
             return False, 0
         try:
             data = res.json()
@@ -392,7 +500,7 @@ def sync_to_sheets():
         st.error(f"❌ Sync Connection Error: {err}")
         return False, 0
 
-# Multi-Section PDF Generator
+# Multi-Section PDF Generator (Now including Staff Advances)
 def make_pdf():
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=10*mm, rightMargin=10*mm, topMargin=10*mm, bottomMargin=10*mm)
@@ -405,44 +513,50 @@ def make_pdf():
     ])
 
     story = [
-        Paragraph(f"<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING VOUCHER</b>", styles["Heading1"]),
+        Paragraph("<b>ALPINE HERBS PVT. LTD. - DAILY FIELD CLOSING VOUCHER</b>", styles["Heading1"]),
         Paragraph(f"<b>Ref:</b> {st.session_state['rep_no']} | <b>Date:</b> {rep_date} ({bs_miti}) | <b>MR:</b> {mr_name} | <b>Route:</b> {route_name or 'Birgunj'}", styles["Normal"]),
         Spacer(1, 3*mm)
     ]
     
     # 1. Sales Table
-    s_rows = [["Inv #", "Client Name", "Address", "Product", "Qty", "FOC", "Rate", "Cash Recd", "Credit", "Total"]]
+    s_rows = [["Inv #", "Client Name [Code]", "Address", "Product", "Qty", "FOC", "Rate", "Cash Recd", "Credit", "Total"]]
     for _, r in ed_s.iterrows():
-        cname, pname = clean_str(r.get("Client Name")), clean_str(r.get("Product Name"))
+        cname, ccode, carea = resolve_client(r.get("Client Name"), clean_str(r.get("Address"), "Birgunj"))
+        pname = clean_str(r.get("Product Name"))
         q, f_q, rt = clean_num(r.get("Qty")), clean_num(r.get("FOC Qty")), clean_num(r.get("Rate (Rs.)"))
         c, cm = clean_num(r.get("Cash Recd (Rs.)")), clean_num(r.get("Credit Given (Rs.)"))
         tb = q * rt; cb = cm if cm > 0 else max(0.0, tb - c)
         if tb == 0 and (c > 0 or cb > 0): tb = c + cb
         if cname or pname or q > 0 or f_q > 0 or c > 0 or cb > 0:
-            s_rows.append([clean_str(r.get("Invoice No."), "INV-01"), cname or "Walk-in Party", clean_str(r.get("Address"), "Birgunj"), pname or "General Stock", str(q), str(f_q), money(rt), money(c), money(cb), money(tb)])
+            display_client = f"{cname} [{ccode}]" if ccode and ccode != "WALK-IN" else cname
+            s_rows.append([clean_str(r.get("Invoice No."), "INV-01"), display_client or "Walk-in Party", carea, pname or "General Stock", str(q), str(f_q), money(rt), money(c), money(cb), money(tb)])
     if len(s_rows) > 1:
         story.append(Paragraph("<b>1. Sales & Invoicing Ledger</b>", styles["Heading2"]))
         t_s = Table(s_rows, colWidths=[18*mm, 48*mm, 24*mm, 46*mm, 14*mm, 14*mm, 26*mm, 26*mm, 26*mm, 26*mm], style=t_style)
         story.extend([t_s, Spacer(1, 3*mm)])
 
     # 2. Cash Collections Table
-    c_rows = [["Receipt #", "Client / Chemist Name", "Payment Mode", "Amount Collected", "Remarks / Ref"]]
+    c_rows = [["Receipt #", "Client / Chemist [Code]", "Payment Mode", "Amount Collected", "Remarks / Ref"]]
     for _, r in ed_c.iterrows():
-        cname, amt = clean_str(r.get("Client Name")), clean_num(r.get("Amount Collected (Rs.)"))
+        cname, ccode, _ = resolve_client(r.get("Client Name"))
+        amt = clean_num(r.get("Amount Collected (Rs.)"))
         if cname or amt > 0:
-            c_rows.append([clean_str(r.get("Receipt No."), "REC-01"), cname or "Chemist", clean_str(r.get("Payment Mode"), "Cash"), money(amt), clean_str(r.get("Remarks / Ref"))])
+            display_client = f"{cname} [{ccode}]" if ccode and ccode != "WALK-IN" else cname
+            c_rows.append([clean_str(r.get("Receipt No."), "REC-01"), display_client or "Chemist", clean_str(r.get("Payment Mode"), "Cash"), money(amt), clean_str(r.get("Remarks / Ref"))])
     if len(c_rows) > 1:
         story.append(Paragraph("<b>2. Cash Collections & Payment Receipts</b>", styles["Heading2"]))
         t_c = Table(c_rows, colWidths=[30*mm, 85*mm, 45*mm, 45*mm, 63*mm], style=t_style)
         story.extend([t_c, Spacer(1, 3*mm)])
 
     # 3. Goods Return Table
-    r_rows = [["Client Name", "Product Name", "Return Qty", "Rate", "Total Value", "Reason / Batch"]]
+    r_rows = [["Client Name [Code]", "Product Name", "Return Qty", "Rate", "Total Value", "Reason / Batch"]]
     for _, r in ed_r.iterrows():
-        cname, pname = clean_str(r.get("Client Name")), clean_str(r.get("Product Name"))
+        cname, ccode, _ = resolve_client(r.get("Client Name"))
+        pname = clean_str(r.get("Product Name"))
         rq, r_rt = clean_num(r.get("Return Qty")), clean_num(r.get("Rate (Rs.)"))
         if cname or pname or rq > 0:
-            r_rows.append([cname or "Chemist", pname or "Returned Item", str(rq), money(r_rt), money(rq * r_rt), clean_str(r.get("Reason"))])
+            display_client = f"{cname} [{ccode}]" if ccode and ccode != "WALK-IN" else cname
+            r_rows.append([display_client or "Chemist", pname or "Returned Item", str(rq), money(r_rt), money(rq * r_rt), clean_str(r.get("Reason"))])
     if len(r_rows) > 1:
         story.append(Paragraph("<b>3. Goods Return Ledger</b>", styles["Heading2"]))
         t_r = Table(r_rows, colWidths=[65*mm, 75*mm, 25*mm, 30*mm, 35*mm, 38*mm], style=t_style)
@@ -459,8 +573,19 @@ def make_pdf():
         t_e = Table(e_rows, colWidths=[90*mm, 55*mm, 35*mm, 35*mm, 53*mm], style=t_style)
         story.extend([t_e, Spacer(1, 3*mm)])
 
-    # 5. Grand Reconciliation Table
-    story.append(Paragraph("<b>5. Grand Financial Settlement</b>", styles["Heading2"]))
+    # 5. Staff Advances Table (Now included in PDF)
+    a_rows = [["Staff / Personnel", "Purpose / Type", "Amount", "Remarks"]]
+    for _, r in ed_st.iterrows():
+        amt, staff = clean_num(r.get("Amount (Rs.)")), clean_str(r.get("Staff Name"))
+        if amt > 0 or staff:
+            a_rows.append([staff or "Staff", f"{clean_str(r.get('Category'))} - {clean_str(r.get('Purpose'))}", money(amt), clean_str(r.get("Remarks"))])
+    if len(a_rows) > 1:
+        story.append(Paragraph("<b>5. Staff Advances & Imprest</b>", styles["Heading2"]))
+        t_a = Table(a_rows, colWidths=[65*mm, 80*mm, 45*mm, 78*mm], style=t_style)
+        story.extend([t_a, Spacer(1, 3*mm)])
+
+    # 6. Grand Reconciliation Table
+    story.append(Paragraph("<b>6. Grand Financial Settlement</b>", styles["Heading2"]))
     sum_rows = [
         ["Total Billed", "Total Cash Recd", "Credit Given", "Goods Return", "Total Outflow", "NET CASH IN HAND"],
         [money(tot_sales), money(total_gross_cash), money(tot_credit), money(tot_returns), money(tot_disbursed), money(net_cash)]
@@ -480,7 +605,7 @@ def make_pdf():
     doc.build(story)
     return buf.getvalue()
 
-# Form Submission Controls
+# Form Controls
 st.write("")
 b1, b2 = st.columns([3, 1])
 with b1:
@@ -495,7 +620,8 @@ with b1:
 with b2:
     if st.button("🔄 Reset / Start Blank", use_container_width=True):
         st.session_state["rep_no"] = f"ALP-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:4].upper()}"
-        for k in ["ed_s", "ed_c", "ed_r", "ed_o", "ed_st", "pdf"]: st.session_state.pop(k, None)
+        st.session_state["form_id"] += 1
+        st.session_state.pop("pdf", None)
         st.rerun()
 
 if "pdf" in st.session_state:
